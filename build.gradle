@@ -1,0 +1,105 @@
+buildscript {
+    ext.kotlin_version = '1.3.21'
+    repositories {
+        mavenCentral()
+        jcenter()
+    }
+    dependencies {
+        classpath "io.spring.gradle:dependency-management-plugin:1.0.3.RELEASE"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "org.jetbrains.kotlin:kotlin-allopen:$kotlin_version"
+    }
+}
+
+plugins {
+    id "com.jfrog.bintray" version "1.8.4"
+}
+
+ext {
+    jfrogKey = System.getenv('JFROG_BINTRAY_ACCESS_KEY')
+}
+
+group 'albelli'
+version = System.getenv('CI_BUILD_ID')
+version version
+
+apply plugin: 'java'
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+    jcenter()
+}
+
+apply plugin: 'kotlin'
+apply plugin: 'maven-publish'
+apply plugin: 'io.spring.dependency-management'
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ["src"]
+        }
+    }
+}
+
+bintray {
+    user = 'derwasp'
+    key = jfrogKey
+    publications = ['MyPublication']
+    publish = true
+    override = true // whatever for now
+    pkg {
+        repo = 'random'
+        name = 'junit.synnefo'
+        licenses = ['Apache-2.0']
+        vcsUrl  = "https://github.com/albumprinter/junit-synnefo"
+    }
+}
+
+dependencyManagement {
+    imports {
+        mavenBom 'software.amazon.awssdk:bom:2.5.18'
+    }
+}
+
+dependencies {
+    compile 'io.cucumber:cucumber-core:4.2.3'
+    compile 'io.cucumber:cucumber-java:4.2.3'
+    compile 'io.cucumber:cucumber-java8:4.2.3'
+    compile 'io.cucumber:cucumber-junit:4.2.3'
+    compile 'com.fasterxml.jackson.core:jackson-databind:2.8.8'
+    compile 'software.amazon.awssdk:s3:2.5.23'
+    compile 'software.amazon.awssdk:codebuild:2.5.23'
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+}
+
+task buildJar(type: Jar, dependsOn: classes) {
+    classifier = 'sources'
+    from sourceSets.main.allSource
+}
+
+artifacts {
+    archives buildJar
+}
+
+publishing {
+    publications {
+        MyPublication(MavenPublication) {
+            from components.java
+            artifact buildJar
+        }
+    }
+}
+compileKotlin {
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+}
+compileTestKotlin {
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+}

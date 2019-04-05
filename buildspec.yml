@@ -1,0 +1,18 @@
+#babushka
+#image: albelli/aws-codebuild-docker-images:java-openjdk-8
+#computeType: BUILD_GENERAL1_LARGE
+#gitversionworkaround: true
+
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo Build started on `date`
+  build:
+    commands:
+      - JFROG_BINTRAY_ACCESS_KEY=$(aws ssm get-parameter --name '/build/variables/JFROG_BINTRAY_ACCESS_KEY' --query Parameter.Value --output text)
+      - gradle bintrayUpload
+  post_build:
+    commands:
+      - echo Build completed on `date`

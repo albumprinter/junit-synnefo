@@ -1,0 +1,9 @@
+assembly-informational-format: '{NuGetVersion}' # NOTE: OctoPack compatibility
+mode: ContinuousDeployment
+branches:
+  master:
+    tag: b
+    increment: Patch
+  feature:
+    tag: a-{BranchName}
+    increment: Patch
