@@ -15,6 +15,7 @@ import java.io.*
 import java.nio.file.Paths
 import java.util.*
 import java.util.concurrent.ExecutionException
+import java.util.function.Consumer
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
@@ -242,6 +243,14 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                     .buildspecOverride(buildSpec)
                     .imageOverride(settings.SynnefoOptions.image)
                     .computeTypeOverride(settings.SynnefoOptions.computeType)
+                    .artifactsOverride { a -> a
+                                    .type(ArtifactsType.S3)
+                                    .path(settings.SynnefoOptions.bucketOutputFolder)
+                                    .name(settings.SynnefoOptions.outputFileName)
+                                    .namespaceType("BUILD_ID")
+                                    .packaging("ZIP")
+                                    .location(settings.SynnefoOptions.bucketName)
+                        }
                     .sourceLocationOverride(settings.SynnefoOptions.bucketName + "/" + sourceLocation)
                     .build()
 
