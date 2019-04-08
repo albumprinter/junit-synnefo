@@ -308,6 +308,8 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
             i++
         }
 
+        stream.close()
+
         val completedMultipartUpload = CompletedMultipartUpload.builder().parts(partETags)
                 .build()
         val completeMultipartUploadRequest =
