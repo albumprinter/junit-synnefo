@@ -61,8 +61,8 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
     @Throws(ExecutionException::class, InterruptedException::class)
     fun schedule(job: Job): List<ScheduledJob> {
         if (job.featurePaths.isEmpty())
-            return;
-        
+            return ArrayList<SynnefoRunResult>();
+
         val sourceLocation = uploadToS3AndGetSourcePath(job, settings)
         ensureProjectExists(settings)
         return startBuilds(job, settings, sourceLocation)
