@@ -37,9 +37,4 @@ class SynnefoRunner(
 
         this.scheduler.collectArtifacts(this.runResults)
     }
-
-    fun hasFailures(): Boolean {
-        return runResults.any { it.status == RunResultStatus.FAILED }
-    }
-
 }
