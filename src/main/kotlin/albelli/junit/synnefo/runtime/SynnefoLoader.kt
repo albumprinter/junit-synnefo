@@ -1,5 +1,6 @@
 package albelli.junit.synnefo.runtime
 
+import albelli.junit.synnefo.api.SynnefoOptions
 import cucumber.runner.EventBus
 import cucumber.runner.TimeService
 import cucumber.runner.TimeServiceEventBus
@@ -17,40 +18,42 @@ import gherkin.pickles.PickleLocation
 
 import java.util.*
 
-class SynnefoLoader(private val SynnefoProperties: SynnefoProperties, classLoader: ClassLoader) {
-    val resourceLoader: ResourceLoader
+class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: ClassLoader) {
+    private val resourceLoader: ResourceLoader
     private val featureSupplier: FeaturePathFeatureSupplier
-    val runtimeOptions: RuntimeOptions
-    val eventBus: EventBus
-    val filters: Filters
-    val classFinder: ClassFinder
+    private val runtimeOptions: RuntimeOptions
+    private val eventBus: EventBus
+    private val filters: Filters
+    private val classFinder: ClassFinder
 
     private var cucumberFeatures: List<CucumberFeature>? = null
 
-    val cucumberScenarios: Map<PickleLocation, CucumberFeature>
-        get() = cucumberScenarios(cucumberFeatures)
 
     init {
         this.resourceLoader = MultiLoader(classLoader)
-        val featureLoader = FeatureLoader(resourceLoader)
         this.runtimeOptions = createRuntimeOptions()
-        this.featureSupplier = FeaturePathFeatureSupplier(featureLoader, runtimeOptions)
+        this.featureSupplier = FeaturePathFeatureSupplier(FeatureLoader(resourceLoader), runtimeOptions)
         this.eventBus = TimeServiceEventBus(TimeService.SYSTEM)
         this.filters = Filters(runtimeOptions)
         this.classFinder = ResourceLoaderClassFinder(resourceLoader, classLoader)
+
+        cucumberFeatures = cucumberFeatures()
+    }
+
+    fun getCucumberScenarios(): Map<PickleLocation, CucumberFeature>{
+        return cucumberScenarios(cucumberFeatures)
     }
 
     fun getCucumberFeatures(): List<CucumberFeature>? {
-        cucumberFeatures = cucumberFeatures()
         return cucumberFeatures
     }
 
     private fun createRuntimeOptions(): RuntimeOptions {
-        val synnefoRuntimeOptions = SynnefoRuntimeOptionsCreator(SynnefoProperties)
+        val synnefoRuntimeOptions = SynnefoRuntimeOptionsCreator(synnefoProperties)
 
         val argv = ArrayList<String>()
         argv.addAll(synnefoRuntimeOptions.getRuntimeOptions())
-        val features = SynnefoProperties.synnefoOptions.cucumberOptions.features
+        val features = synnefoProperties.cucumberOptions.features
         argv.addAll(features)
 
         return RuntimeOptions(argv)
@@ -61,7 +64,7 @@ class SynnefoLoader(private val SynnefoProperties: SynnefoProperties, classLoade
 
         val matchedCucumberFeatures = ArrayList<CucumberFeature>()
 
-        loadedCucumberFeatures.forEach { cucumberFeature ->
+        for (cucumberFeature in loadedCucumberFeatures) {
             val pickleMatcher = SynnefoPickleMatcher(cucumberFeature, filters)
 
             if (pickleMatcher.matches()) {
@@ -74,20 +77,26 @@ class SynnefoLoader(private val SynnefoProperties: SynnefoProperties, classLoade
     private fun cucumberScenarios(cucumberFeatures: List<CucumberFeature>?): Map<PickleLocation, CucumberFeature> {
         val scenarios = HashMap<PickleLocation, CucumberFeature>()
 
-        cucumberFeatures?.forEach { cucumberFeature ->
-            cucumberFeature.gherkinFeature.feature.children.forEach { scenario ->
+        if (cucumberFeatures == null)
+            return scenarios
 
+        for (cucumberFeature in cucumberFeatures) {
+            for (scenario in cucumberFeature.gherkinFeature.feature.children) {
                 val lines = ArrayList<Int>()
 
                 if (scenario is ScenarioOutline) {
                     val examples = scenario.examples
 
-                    examples.forEach { example -> example.tableBody.forEach { tr -> lines.add(tr.location.line) } }
+                    for (example in examples) {
+                        for (tr in example.tableBody) {
+                            lines.add(tr.location.line)
+                        }
+                    }
                 } else {
                     lines.add(scenario.location.line)
                 }
 
-                lines.forEach { line ->
+                for (line in lines) {
                     val pickleMatcher = SynnefoPickleMatcher(cucumberFeature, filters)
 
                     val pickleLocation = pickleMatcher.matchLocation(line)

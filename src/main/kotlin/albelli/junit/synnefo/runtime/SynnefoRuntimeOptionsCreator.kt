@@ -1,23 +1,21 @@
 package albelli.junit.synnefo.runtime
 
+import albelli.junit.synnefo.api.SynnefoOptions
 import cucumber.api.CucumberOptions
 import java.util.*
 import java.util.Arrays.asList
 import kotlin.collections.ArrayList
 
-class SynnefoRuntimeOptionsCreator(SynnefoProperties: SynnefoProperties) {
-    private val cucumberOptions: CucumberOptions = SynnefoProperties.synnefoOptions.cucumberOptions
-
+class SynnefoRuntimeOptionsCreator(synnefoProperties: SynnefoOptions) {
+    private val cucumberOptions: CucumberOptions = synnefoProperties.cucumberOptions
     private val runtimeOptions = ArrayList<String>()
 
     init {
         createRuntimeOptions(cucumberOptions).forEach { _, value -> runtimeOptions.addAll(value) }
     }
 
-
     fun getRuntimeOptions(): ArrayList<String> {
         return runtimeOptions
-
     }
 
     fun mapRuntimeOptions(): Map<String, List<String>> {

@@ -14,14 +14,15 @@ class SynnefoPickleMatcher(private val cucumberFeature: CucumberFeature, private
         val matched = AtomicBoolean()
 
         try {
-            compiler.compile(cucumberFeature.gherkinFeature).forEach { pickle ->
-                matched.set(filters.matchesFilters(PickleEvent(cucumberFeature.uri.schemeSpecificPart, pickle)))
+            for (pickle in compiler.compile(cucumberFeature.gherkinFeature)) {
 
+                matched.set(filters.matchesFilters(PickleEvent(cucumberFeature.uri.schemeSpecificPart, pickle)))
                 if (matched.get()) {
                     throw ConditionSatisfiedException()
                 }
             }
-        } catch (ignored: ConditionSatisfiedException) {
+        }
+        catch (ignored: ConditionSatisfiedException) {
         }
 
         return matched.get()
@@ -33,8 +34,7 @@ class SynnefoPickleMatcher(private val cucumberFeature: CucumberFeature, private
         val pickles = compiler.compile(cucumberFeature.gherkinFeature)
 
         try {
-            pickles.forEach { pickle ->
-
+            for (pickle in pickles) {
                 val pickleLocation = pickle.locations.firstOrNull { it.line == pickleLocationLine }
 
                 if (pickleLocation != null) {
@@ -44,9 +44,8 @@ class SynnefoPickleMatcher(private val cucumberFeature: CucumberFeature, private
                     }
                 }
             }
-        } catch (ignored: ConditionSatisfiedException) {
-
         }
+        catch (ignored: ConditionSatisfiedException) {}
 
         return location
     }
