@@ -252,7 +252,6 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
             job.notifier.fireTestStarted(junitDescription)
 
             ids.add(ScheduledJob(job, buildId, info, junitDescription))
-
         }
 
         return ids

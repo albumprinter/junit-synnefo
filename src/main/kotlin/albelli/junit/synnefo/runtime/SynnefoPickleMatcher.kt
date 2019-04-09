@@ -13,42 +13,31 @@ class SynnefoPickleMatcher(private val cucumberFeature: CucumberFeature, private
     fun matches(): Boolean {
         val matched = AtomicBoolean()
 
-        try {
-            for (pickle in compiler.compile(cucumberFeature.gherkinFeature)) {
+        for (pickle in compiler.compile(cucumberFeature.gherkinFeature)) {
 
-                matched.set(filters.matchesFilters(PickleEvent(cucumberFeature.uri.schemeSpecificPart, pickle)))
-                if (matched.get()) {
-                    throw ConditionSatisfiedException()
-                }
+            matched.set(filters.matchesFilters(PickleEvent(cucumberFeature.uri.schemeSpecificPart, pickle)))
+            if (matched.get()) {
+                return true
             }
         }
-        catch (ignored: ConditionSatisfiedException) {
-        }
 
-        return matched.get()
+        return false
     }
 
     fun matchLocation(pickleLocationLine: Int): PickleLocation? {
-        var location: PickleLocation? = null
-
         val pickles = compiler.compile(cucumberFeature.gherkinFeature)
 
-        try {
-            for (pickle in pickles) {
-                val pickleLocation = pickle.locations.firstOrNull { it.line == pickleLocationLine }
+        for (pickle in pickles) {
+            val pickleLocation = pickle.locations.firstOrNull { it.line == pickleLocationLine }
 
-                if (pickleLocation != null) {
-                    if (filters.matchesFilters(PickleEvent(cucumberFeature.uri.schemeSpecificPart, pickle))) {
-                        location = pickleLocation
-                        throw ConditionSatisfiedException()
-                    }
+            if (pickleLocation != null) {
+                if (filters.matchesFilters(PickleEvent(cucumberFeature.uri.schemeSpecificPart, pickle))) {
+                    return pickleLocation
                 }
             }
         }
-        catch (ignored: ConditionSatisfiedException) {}
 
-        return location
+        return null
     }
 
-    private inner class ConditionSatisfiedException : RuntimeException()
 }

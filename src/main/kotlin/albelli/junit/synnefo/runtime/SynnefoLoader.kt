@@ -26,7 +26,7 @@ class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: 
     private val filters: Filters
     private val classFinder: ClassFinder
 
-    private var cucumberFeatures: List<CucumberFeature>? = null
+    private var cucumberFeatures: List<CucumberFeature>
 
 
     init {
@@ -44,7 +44,7 @@ class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: 
         return cucumberScenarios(cucumberFeatures)
     }
 
-    fun getCucumberFeatures(): List<CucumberFeature>? {
+    fun getCucumberFeatures(): List<CucumberFeature> {
         return cucumberFeatures
     }
 
@@ -74,25 +74,18 @@ class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: 
         return matchedCucumberFeatures
     }
 
-    private fun cucumberScenarios(cucumberFeatures: List<CucumberFeature>?): Map<PickleLocation, CucumberFeature> {
+    private fun cucumberScenarios(cucumberFeatures: List<CucumberFeature>): Map<PickleLocation, CucumberFeature> {
         val scenarios = HashMap<PickleLocation, CucumberFeature>()
-
-        if (cucumberFeatures == null)
-            return scenarios
 
         for (cucumberFeature in cucumberFeatures) {
             for (scenario in cucumberFeature.gherkinFeature.feature.children) {
                 val lines = ArrayList<Int>()
 
                 if (scenario is ScenarioOutline) {
-                    val examples = scenario.examples
-
-                    for (example in examples) {
-                        for (tr in example.tableBody) {
-                            lines.add(tr.location.line)
-                        }
-                    }
-                } else {
+                    val allLinesForScenario = scenario.examples.flatMap { it.tableBody.map { tableRow -> tableRow.location.line } }
+                    lines.addAll(allLinesForScenario)
+                }
+                else {
                     lines.add(scenario.location.line)
                 }
 
