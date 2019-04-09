@@ -5,7 +5,7 @@ import cucumber.runtime.model.CucumberFeature
 
 class SynnefoRunnerInfo(SynnefoProperties: SynnefoProperties, private val cucumberFeature: CucumberFeature, private val lineId: Int?) {
     private val synnefoRuntimeOptions: SynnefoRuntimeOptionsCreator = SynnefoRuntimeOptionsCreator(SynnefoProperties)
-    private val synnefoRunLevel: SynnefoRunLevel = SynnefoProperties.SynnefoOptions.runLevel
+    private val synnefoRunLevel: SynnefoRunLevel = SynnefoProperties.synnefoOptions.runLevel
 
     val runtimeOptions: Map<String, List<String>>
         get() = synnefoRuntimeOptions.mapRuntimeOptions()

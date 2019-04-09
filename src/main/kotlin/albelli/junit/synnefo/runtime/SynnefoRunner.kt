@@ -9,11 +9,11 @@ import java.util.*
 
 class SynnefoRunner(
         private val runnerInfoList: List<SynnefoRunnerInfo>,
-        private val SynnefoProperties: SynnefoProperties,
+        private val synnefoProperties: SynnefoProperties,
         private val cucumberFeatures: List<CucumberFeature>,
         private val notifier: RunNotifier) {
 
-    private val scheduler: AmazonCodeBuildScheduler = AmazonCodeBuildScheduler(SynnefoProperties)
+    private val scheduler: AmazonCodeBuildScheduler = AmazonCodeBuildScheduler(synnefoProperties)
     private val runResults = ArrayList<SynnefoRunResult>()
 
     fun run() {
@@ -21,7 +21,7 @@ class SynnefoRunner(
 
         val job = AmazonCodeBuildScheduler.Job(
                 runnerInfoList,
-                SynnefoProperties.classPath,
+                synnefoProperties.classPath,
                 cucumberFeatures.map { it.uri.schemeSpecificPart },
                 notifier)
 

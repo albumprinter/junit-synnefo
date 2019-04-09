@@ -6,7 +6,7 @@ import java.util.Arrays.asList
 import kotlin.collections.ArrayList
 
 class SynnefoRuntimeOptionsCreator(SynnefoProperties: SynnefoProperties) {
-    private val cucumberOptions: CucumberOptions = SynnefoProperties.SynnefoOptions.cucumberOptions
+    private val cucumberOptions: CucumberOptions = SynnefoProperties.synnefoOptions.cucumberOptions
 
     private val runtimeOptions = ArrayList<String>()
 

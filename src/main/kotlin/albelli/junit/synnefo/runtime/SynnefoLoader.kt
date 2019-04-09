@@ -50,7 +50,7 @@ class SynnefoLoader(private val SynnefoProperties: SynnefoProperties, classLoade
 
         val argv = ArrayList<String>()
         argv.addAll(synnefoRuntimeOptions.getRuntimeOptions())
-        val features = SynnefoProperties.SynnefoOptions.cucumberOptions.features
+        val features = SynnefoProperties.synnefoOptions.cucumberOptions.features
         argv.addAll(features)
 
         return RuntimeOptions(argv)
