@@ -34,7 +34,7 @@ class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: 
         cucumberFeatures = cucumberFeatures()
     }
 
-    fun getCucumberScenarios(): Map<Int, CucumberFeature>{
+    fun getCucumberScenarios(): Sequence<Pair<Int, CucumberFeature>>{
         return cucumberScenarios(cucumberFeatures)
     }
 
@@ -59,18 +59,16 @@ class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: 
                 .filter { SynnefoPickleFilter(it, filters).matches() }
     }
 
-    private fun cucumberScenarios(cucumberFeatures: List<CucumberFeature>): Map<Int, CucumberFeature> {
-        val scenarios = HashMap<Int, CucumberFeature>()
+    private fun cucumberScenarios(cucumberFeatures: List<CucumberFeature>) = sequence {
         for (cucumberFeature in cucumberFeatures) {
             for (scenario in cucumberFeature.gherkinFeature.feature.children) {
                 for (line in scenario.getAllLines()) {
                     if (SynnefoPickleFilter(cucumberFeature, filters).matches(line)) {
-                        scenarios[line] = cucumberFeature
+                        yield(Pair(line, cucumberFeature))
                     }
                 }
             }
         }
-        return scenarios
     }
 
     private fun ScenarioDefinition.getAllLines() : List<Int> {
