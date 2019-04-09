@@ -20,7 +20,6 @@ class SynnefoRuntimeOptionsCreator(synnefoProperties: SynnefoOptions) {
         val runtimeOptions = ArrayList<String>()
 
         runtimeOptions.addAll(optionParser("--glue", envCucumberOptionOverride("glue", cucumberOptions.glue.toList())))
-
         runtimeOptions.addAll(optionParser("--tags", envCucumberOptionOverride("tags", cucumberOptions.tags.toList())))
         runtimeOptions.addAll(optionParser("--plugin", envCucumberOptionOverride("plugin", cucumberOptions.plugin.toList())))
         runtimeOptions.addAll(optionParser("--name", envCucumberOptionOverride("name", cucumberOptions.name.toList())))
@@ -32,7 +31,6 @@ class SynnefoRuntimeOptionsCreator(synnefoProperties: SynnefoOptions) {
 
         return runtimeOptions
     }
-
 
     private fun envCucumberOptionOverride(systemPropertyName: String, cucumberOptions: List<String>): List<String> {
         val cucumberOption = System.getProperty("cucumber.$systemPropertyName")
