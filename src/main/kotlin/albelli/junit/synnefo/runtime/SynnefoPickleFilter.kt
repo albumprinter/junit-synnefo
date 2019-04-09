@@ -4,10 +4,12 @@ import cucumber.runtime.filter.Filters
 import cucumber.runtime.model.CucumberFeature
 import gherkin.events.PickleEvent
 import gherkin.pickles.Compiler
-import gherkin.pickles.PickleLocation
-import java.util.concurrent.atomic.AtomicBoolean
 
-class SynnefoPickleMatcher(private val cucumberFeature: CucumberFeature, private val filters: Filters) {
+/**
+ * A class used to filter pickles.
+ * This is where tags are applied
+ */
+class SynnefoPickleFilter(private val cucumberFeature: CucumberFeature, private val filters: Filters) {
     private val compiler: Compiler = Compiler()
 
     fun matches(): Boolean {

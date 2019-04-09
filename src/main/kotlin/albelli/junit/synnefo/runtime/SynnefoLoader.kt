@@ -1,9 +1,6 @@
 package albelli.junit.synnefo.runtime
 
 import albelli.junit.synnefo.api.SynnefoOptions
-import cucumber.runner.EventBus
-import cucumber.runner.TimeService
-import cucumber.runner.TimeServiceEventBus
 import cucumber.runtime.ClassFinder
 import cucumber.runtime.FeaturePathFeatureSupplier
 import cucumber.runtime.RuntimeOptions
@@ -13,8 +10,8 @@ import cucumber.runtime.io.ResourceLoader
 import cucumber.runtime.io.ResourceLoaderClassFinder
 import cucumber.runtime.model.CucumberFeature
 import cucumber.runtime.model.FeatureLoader
+import gherkin.ast.ScenarioDefinition
 import gherkin.ast.ScenarioOutline
-import gherkin.pickles.PickleLocation
 
 import java.util.*
 
@@ -58,42 +55,34 @@ class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: 
     }
 
     private fun cucumberFeatures(): List<CucumberFeature> {
-        val loadedCucumberFeatures = featureSupplier.get()
-
-        val matchedCucumberFeatures = ArrayList<CucumberFeature>()
-
-        for (cucumberFeature in loadedCucumberFeatures) {
-            val pickleMatcher = SynnefoPickleMatcher(cucumberFeature, filters)
-
-            if (pickleMatcher.matches()) {
-                matchedCucumberFeatures.add(cucumberFeature)
-            }
-        }
-        return matchedCucumberFeatures
+        return featureSupplier
+                .get()
+                .filter { SynnefoPickleFilter(it, filters).matches() }
     }
 
     private fun cucumberScenarios(cucumberFeatures: List<CucumberFeature>): Map<Int, CucumberFeature> {
         val scenarios = HashMap<Int, CucumberFeature>()
-
         for (cucumberFeature in cucumberFeatures) {
             for (scenario in cucumberFeature.gherkinFeature.feature.children) {
-                val lines = ArrayList<Int>()
-
-                if (scenario is ScenarioOutline) {
-                    val allLinesForScenario = scenario.examples.flatMap { it.tableBody.map { tableRow -> tableRow.location.line } }
-                    lines.addAll(allLinesForScenario)
-                }
-                else {
-                    lines.add(scenario.location.line)
-                }
-
-                for (line in lines) {
-                    if (SynnefoPickleMatcher(cucumberFeature, filters).matches(line)) {
+                for (line in scenario.getAllLines()) {
+                    if (SynnefoPickleFilter(cucumberFeature, filters).matches(line)) {
                         scenarios[line] = cucumberFeature
                     }
                 }
             }
         }
         return scenarios
+    }
+
+    private fun ScenarioDefinition.getAllLines() : List<Int> {
+        return if (this is ScenarioOutline) {
+            this.examples
+                    .flatMap {
+                        it.tableBody.map { tableRow -> tableRow.location.line }
+                    }
+        }
+        else {
+            listOf(this.location.line)
+        }
     }
 }
