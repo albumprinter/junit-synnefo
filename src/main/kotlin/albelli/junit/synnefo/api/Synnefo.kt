@@ -27,8 +27,8 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
     init {
         val opt  =
                 (clazz.declaredAnnotations
-                        .filter { it is SynnefoOptions }
-                        .firstOrNull() ?: throw SynnefoException("Runner class is not annotated with @SynnefoOptions")
+                        .firstOrNull { it is SynnefoOptions }
+                            ?: throw SynnefoException("Runner class is not annotated with @SynnefoOptions")
                         ) as SynnefoOptions
 
         val classPath = File(clazz.protectionDomain.codeSource.location.toURI()).path

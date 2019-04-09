@@ -14,11 +14,8 @@ class SynnefoRunner(
         private val notifier: RunNotifier) {
 
     private val scheduler: AmazonCodeBuildScheduler = AmazonCodeBuildScheduler(synnefoProperties)
-    private val runResults = ArrayList<SynnefoRunResult>()
 
     fun run() {
-        runResults.clear()
-
         val job = AmazonCodeBuildScheduler.Job(
                 runnerInfoList,
                 synnefoProperties.classPath,
@@ -29,7 +26,7 @@ class SynnefoRunner(
         job.notifier.addFirstListener(result.createListener())
         job.notifier.fireTestRunStarted(Description.createSuiteDescription("Started the tests"))
         val jobs = this.scheduler.schedule(job)
-        runResults.addAll(this.scheduler.waitForJobs(jobs))
+        this.scheduler.waitForJobs(jobs)
         this.scheduler.collectArtifacts(jobs)
         job.notifier.fireTestRunFinished(result)
     }
