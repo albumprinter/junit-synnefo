@@ -34,7 +34,7 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
         callbacks = SynnefoCallbacks(clazz)
 
         synnefoLoader = SynnefoLoader(opt, clazz.classLoader)
-        cucumberFeatures = synnefoLoader.getCucumberFeatures()!!
+        cucumberFeatures = synnefoLoader.getCucumberFeatures()
 
         runnerInfoList = ArrayList()
 

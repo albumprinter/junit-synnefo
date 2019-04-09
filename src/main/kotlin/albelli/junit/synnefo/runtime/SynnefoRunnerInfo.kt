@@ -11,8 +11,8 @@ class SynnefoRunnerInfo(
     private val synnefoRuntimeOptions: SynnefoRuntimeOptionsCreator = SynnefoRuntimeOptionsCreator(synnefoOptions)
     private val synnefoRunLevel: SynnefoRunLevel = synnefoOptions.runLevel
 
-    val runtimeOptions: Map<String, List<String>>
-        get() = synnefoRuntimeOptions.mapRuntimeOptions()
+    val runtimeOptions: List<String>
+        get() = synnefoRuntimeOptions.getRuntimeOptions()
 
     val cucumberFeatureLocation: String
         get() {

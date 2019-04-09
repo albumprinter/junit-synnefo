@@ -24,7 +24,6 @@ class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: 
 
     private var cucumberFeatures: List<CucumberFeature>
 
-
     init {
         this.resourceLoader = MultiLoader(classLoader)
         this.runtimeOptions = createRuntimeOptions()

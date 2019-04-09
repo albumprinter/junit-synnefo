@@ -2,8 +2,6 @@ package albelli.junit.synnefo.runtime
 
 import albelli.junit.synnefo.api.SynnefoOptions
 import cucumber.api.CucumberOptions
-import java.util.*
-import java.util.Arrays.asList
 import kotlin.collections.ArrayList
 
 class SynnefoRuntimeOptionsCreator(synnefoProperties: SynnefoOptions) {
@@ -11,37 +9,32 @@ class SynnefoRuntimeOptionsCreator(synnefoProperties: SynnefoOptions) {
     private val runtimeOptions = ArrayList<String>()
 
     init {
-        createRuntimeOptions(cucumberOptions).forEach { _, value -> runtimeOptions.addAll(value) }
+        runtimeOptions.addAll(createRuntimeOptions(cucumberOptions))
     }
 
     fun getRuntimeOptions(): ArrayList<String> {
         return runtimeOptions
     }
 
-    fun mapRuntimeOptions(): Map<String, List<String>> {
-        return createRuntimeOptions(cucumberOptions)
-    }
+    private fun createRuntimeOptions(cucumberOptions: CucumberOptions): List<String> {
+        val runtimeOptions = ArrayList<String>()
 
-    private fun createRuntimeOptions(cucumberOptions: CucumberOptions): Map<String, List<String>> {
-        val runtimeOptions = HashMap<String, List<String>>()
+        runtimeOptions.addAll(optionParser("--glue", envCucumberOptionOverride("glue", cucumberOptions.glue.toList())))
 
-        runtimeOptions["--glue"] = optionParser("--glue", envCucumberOptionParser("glue", cucumberOptions.glue.toList()))
-        runtimeOptions["--tags"] = optionParser("--tags", envCucumberOptionParser("tags", cucumberOptions.tags.toList()))
-        runtimeOptions["--plugin"] = optionParser("--plugin", envCucumberOptionParser("plugin", cucumberOptions.plugin.toList()))
-        runtimeOptions["--name"] = optionParser("--name", envCucumberOptionParser("name", cucumberOptions.name.toList()))
-        runtimeOptions["--junit"] = optionParser("--junit", envCucumberOptionParser("junit", cucumberOptions.junit.toList()))
-        runtimeOptions["--snippets"] = listOf("--snippets", cucumberOptions.snippets.toString())
-        runtimeOptions["--dryRun"] = listOf(if (cucumberOptions.dryRun) "--dry-run" else "--no-dry-run")
-        runtimeOptions["--strict"] = listOf(if (cucumberOptions.strict) "--strict" else "--no-strict")
-        runtimeOptions["--monochrome"] = listOf(if (cucumberOptions.monochrome) "--monochrome" else "--no-monochrome")
-
-        runtimeOptions.values.removeIf { it.isEmpty() }
+        runtimeOptions.addAll(optionParser("--tags", envCucumberOptionOverride("tags", cucumberOptions.tags.toList())))
+        runtimeOptions.addAll(optionParser("--plugin", envCucumberOptionOverride("plugin", cucumberOptions.plugin.toList())))
+        runtimeOptions.addAll(optionParser("--name", envCucumberOptionOverride("name", cucumberOptions.name.toList())))
+        runtimeOptions.addAll(optionParser("--junit", envCucumberOptionOverride("junit", cucumberOptions.junit.toList())))
+        runtimeOptions.addAll(listOf("--snippets", cucumberOptions.snippets.toString()))
+        runtimeOptions.add(if (cucumberOptions.dryRun) "--dry-run" else "--no-dry-run")
+        runtimeOptions.add(if (cucumberOptions.strict) "--strict" else "--no-strict")
+        runtimeOptions.add(if (cucumberOptions.monochrome) "--monochrome" else "--no-monochrome")
 
         return runtimeOptions
     }
 
 
-    private fun envCucumberOptionParser(systemPropertyName: String, cucumberOptions: List<String>): List<String> {
+    private fun envCucumberOptionOverride(systemPropertyName: String, cucumberOptions: List<String>): List<String> {
         val cucumberOption = System.getProperty("cucumber.$systemPropertyName")
 
         if (cucumberOption != null && cucumberOption.trim { it <= ' ' }.isNotEmpty()) {
@@ -54,17 +47,14 @@ class SynnefoRuntimeOptionsCreator(synnefoProperties: SynnefoOptions) {
         return cucumberOptions
     }
 
-    private fun optionParser(name: String, options: List<String>): List<String> {
+    private fun optionParser(name: String, options: Iterable<String>): List<String> {
         val runOptions = ArrayList<String>()
 
-        if (options.isEmpty())
-            return runOptions
-
-        asList(*asList(options).toString().split(",".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray())
-                .forEach { value ->
-                    runOptions.add(name)
-                    runOptions.add(value.trim { it <= ' ' }.replace("[", "").replace("]", ""))
-                }
+        for (opt in options)
+        {
+            runOptions.add(name)
+            runOptions.add(opt)
+        }
 
         return runOptions
     }

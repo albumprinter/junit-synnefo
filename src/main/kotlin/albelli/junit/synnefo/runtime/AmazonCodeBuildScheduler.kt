@@ -127,14 +127,14 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
         }
     }
 
-    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: Map<String, List<String>>): String {
+    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>): String {
         val sb = StringBuilder()
         sb.appendWithEscaping("java")
         sb.appendWithEscaping("-cp")
         sb.appendWithEscaping("./../$jar")
         sb.appendWithEscaping("cucumber.api.cli.Main")
         sb.appendWithEscaping("./../$feature")
-        runtimeOptions.forEach { _, values -> values.forEach { sb.appendWithEscaping(it) } }
+        runtimeOptions.forEach { sb.appendWithEscaping(it) }
 
         return String.format(this.buildSpecTemplate, sb.toString())
     }
