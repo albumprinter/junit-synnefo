@@ -30,11 +30,7 @@ class SynnefoRunner(
         job.notifier.fireTestRunStarted(Description.createSuiteDescription("Started the tests"))
         val jobs = this.scheduler.schedule(job)
         runResults.addAll(this.scheduler.waitForJobs(jobs))
+        this.scheduler.collectArtifacts(jobs)
         job.notifier.fireTestRunFinished(result)
-    }
-
-    fun collectArtifacts() {
-
-        this.scheduler.collectArtifacts(this.runResults)
     }
 }

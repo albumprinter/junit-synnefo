@@ -39,6 +39,5 @@ class SynnefoCallbacks(private val clazz: Class<*>) {
         } catch (e: InvocationTargetException) {
             throw SynnefoException(e)
         }
-
     }
 }

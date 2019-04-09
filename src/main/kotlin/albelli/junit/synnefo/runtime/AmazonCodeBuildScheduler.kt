@@ -67,9 +67,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
         return startBuilds(job, settings, sourceLocation)
     }
 
-    fun waitForJobs(jobs: List<ScheduledJob>): ArrayList<SynnefoRunResult> {
-        val runResults = ArrayList<SynnefoRunResult>()
-
+    fun waitForJobs(jobs: List<ScheduledJob>) {
         val queue = LinkedList<ScheduledJob>()
         queue.addAll(jobs)
 
@@ -94,15 +92,12 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                 when (build.buildStatus()!!) {
                     STOPPED, TIMED_OUT, FAILED, FAULT ->
                     {
-                        runResults.add(SynnefoRunResult(RunResultStatus.FAILED, originalJob))
                         originalJob.originalJob.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
                     }
 
                     SUCCEEDED ->
                     {
-                        runResults.add(SynnefoRunResult(RunResultStatus.PASSED, originalJob))
                         originalJob.originalJob.notifier.fireTestFinished(originalJob.junitDescription)
-
                     }
 
                     IN_PROGRESS -> queue.addLast(originalJob)
@@ -113,15 +108,13 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
             Thread.sleep(2000)
         }
-        return runResults
     }
 
-
-    fun collectArtifacts(runResults: ArrayList<SynnefoRunResult>) {
+    fun collectArtifacts(runResults: List<ScheduledJob>) {
         val targetDirectory = settings.synnefoOptions.reportTargetDir
 
         for (result in runResults) {
-            val buildId = result.originalJob.buildId.substring(result.originalJob.buildId.indexOf(':') + 1)
+            val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
             val keyPath = "${settings.synnefoOptions.bucketOutputFolder}$buildId/${settings.synnefoOptions.outputFileName}"
 
             val getObjectRequest = GetObjectRequest.builder()
@@ -192,7 +185,6 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
         // TODO:
         // Make the project creation async
-
         val createRequest = CreateProjectRequest
                 .builder()
                 .name(settings.synnefoOptions.projectName)
@@ -211,7 +203,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                     b
                             .type(EnvironmentType.LINUX_CONTAINER)
                             .image(settings.synnefoOptions.image)
-                            .computeType(ComputeType.BUILD_GENERAL1_SMALL)
+                            .computeType(settings.synnefoOptions.computeType)
                 }
                 .serviceRole(settings.synnefoOptions.serviceRole)
                 .source { s ->

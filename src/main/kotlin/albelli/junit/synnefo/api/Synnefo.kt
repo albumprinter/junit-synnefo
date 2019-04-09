@@ -89,7 +89,6 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
         try {
             callbacks.beforeAll()
             synnefoRunner.run()
-            synnefoRunner.collectArtifacts()
         } finally {
             callbacks.afterAll()
         }
