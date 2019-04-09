@@ -22,7 +22,6 @@ class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: 
     private val resourceLoader: ResourceLoader
     private val featureSupplier: FeaturePathFeatureSupplier
     private val runtimeOptions: RuntimeOptions
-    private val eventBus: EventBus
     private val filters: Filters
     private val classFinder: ClassFinder
 
@@ -33,14 +32,13 @@ class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: 
         this.resourceLoader = MultiLoader(classLoader)
         this.runtimeOptions = createRuntimeOptions()
         this.featureSupplier = FeaturePathFeatureSupplier(FeatureLoader(resourceLoader), runtimeOptions)
-        this.eventBus = TimeServiceEventBus(TimeService.SYSTEM)
         this.filters = Filters(runtimeOptions)
         this.classFinder = ResourceLoaderClassFinder(resourceLoader, classLoader)
 
         cucumberFeatures = cucumberFeatures()
     }
 
-    fun getCucumberScenarios(): Map<PickleLocation, CucumberFeature>{
+    fun getCucumberScenarios(): Map<Int, CucumberFeature>{
         return cucumberScenarios(cucumberFeatures)
     }
 
@@ -74,8 +72,8 @@ class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: 
         return matchedCucumberFeatures
     }
 
-    private fun cucumberScenarios(cucumberFeatures: List<CucumberFeature>): Map<PickleLocation, CucumberFeature> {
-        val scenarios = HashMap<PickleLocation, CucumberFeature>()
+    private fun cucumberScenarios(cucumberFeatures: List<CucumberFeature>): Map<Int, CucumberFeature> {
+        val scenarios = HashMap<Int, CucumberFeature>()
 
         for (cucumberFeature in cucumberFeatures) {
             for (scenario in cucumberFeature.gherkinFeature.feature.children) {
@@ -90,12 +88,8 @@ class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: 
                 }
 
                 for (line in lines) {
-                    val pickleMatcher = SynnefoPickleMatcher(cucumberFeature, filters)
-
-                    val pickleLocation = pickleMatcher.matchLocation(line)
-
-                    if (pickleLocation != null) {
-                        scenarios[pickleLocation] = cucumberFeature
+                    if (SynnefoPickleMatcher(cucumberFeature, filters).matches(line)) {
+                        scenarios[line] = cucumberFeature
                     }
                 }
             }

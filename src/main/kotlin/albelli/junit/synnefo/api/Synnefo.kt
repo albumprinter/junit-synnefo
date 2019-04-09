@@ -45,8 +45,8 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
                 runnerInfoList.add(SynnefoRunnerInfo(opt, feature, null))
             }
         } else {
-            for ((location, scenario) in synnefoLoader.getCucumberScenarios()) {
-                runnerInfoList.add(SynnefoRunnerInfo(opt, scenario, location.line))
+            for ((line, scenario) in synnefoLoader.getCucumberScenarios()) {
+                runnerInfoList.add(SynnefoRunnerInfo(opt, scenario, line))
             }
         }
     }
