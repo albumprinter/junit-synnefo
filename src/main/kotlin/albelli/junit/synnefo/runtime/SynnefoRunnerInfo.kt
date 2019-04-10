@@ -1,14 +1,17 @@
 package albelli.junit.synnefo.runtime
 
+import albelli.junit.synnefo.api.SynnefoOptions
 import albelli.junit.synnefo.api.SynnefoRunLevel
 import cucumber.runtime.model.CucumberFeature
 
-class SynnefoRunnerInfo(SynnefoProperties: SynnefoProperties, private val cucumberFeature: CucumberFeature, private val lineId: Int?) {
-    private val synnefoRuntimeOptions: SynnefoRuntimeOptionsCreator = SynnefoRuntimeOptionsCreator(SynnefoProperties)
-    private val synnefoRunLevel: SynnefoRunLevel = SynnefoProperties.synnefoOptions.runLevel
+class SynnefoRunnerInfo(
+        synnefoOptions: SynnefoOptions,
+        private val cucumberFeature: CucumberFeature,
+        private val lineId: Int?) {
+    private val synnefoRuntimeOptions: SynnefoRuntimeOptionsCreator = SynnefoRuntimeOptionsCreator(synnefoOptions)
+    private val synnefoRunLevel: SynnefoRunLevel = synnefoOptions.runLevel
 
-    val runtimeOptions: Map<String, List<String>>
-        get() = synnefoRuntimeOptions.mapRuntimeOptions()
+    val runtimeOptions: List<String> = synnefoRuntimeOptions.getRuntimeOptions()
 
     val cucumberFeatureLocation: String
         get() {
@@ -20,5 +23,4 @@ class SynnefoRunnerInfo(SynnefoProperties: SynnefoProperties, private val cucumb
                 featureLocation
             }
         }
-
 }
