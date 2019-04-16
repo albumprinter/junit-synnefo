@@ -217,17 +217,12 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
     }
 
     private suspend fun startBuilds(job: Job, settings: SynnefoProperties, sourceLocation: String): List<ScheduledJob> {
-
-        val ids = ArrayList<ScheduledJob>()
-        for (info in job.runnerInfos) {
-            val scheduledJob = startBuild(job, info, settings, sourceLocation)
-            ids.add(scheduledJob)
+        return job.runnerInfos.map {
+            startBuild(job, settings, sourceLocation, it)
         }
-
-        return ids
     }
 
-    private suspend fun startBuild(job: Job, info: SynnefoRunnerInfo, settings: SynnefoProperties, sourceLocation: String): ScheduledJob {
+    private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo): ScheduledJob {
         val buildSpec = generateBuildspecForFeature(Paths.get(job.jarPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions)
 
         val buildStartRequest = StartBuildRequest.builder()
