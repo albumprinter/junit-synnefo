@@ -1,5 +1,6 @@
 package albelli.junit.synnefo.runtime
 
+import kotlinx.coroutines.runBlocking
 import org.junit.runner.Description
 import org.junit.runner.Result
 import org.junit.runner.notification.RunNotifier
@@ -21,9 +22,11 @@ class SynnefoRunner(
         val result = Result()
         job.notifier.addFirstListener(result.createListener())
         job.notifier.fireTestRunStarted(Description.createSuiteDescription("Started the tests"))
-        val jobs = this.scheduler.schedule(job)
-        this.scheduler.waitForJobs(jobs)
-        this.scheduler.collectArtifacts(jobs)
+        runBlocking {
+            val jobs = scheduler.schedule(job)
+            scheduler.waitForJobs(jobs)
+            scheduler.collectArtifacts(jobs)
+        }
         job.notifier.fireTestRunFinished(result)
     }
 }

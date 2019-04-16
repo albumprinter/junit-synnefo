@@ -1,30 +1,30 @@
 package albelli.junit.synnefo.runtime
 
 import albelli.junit.synnefo.runtime.exceptions.SynnefoTestFailureException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.future.await
 import org.junit.runner.Description
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
-import software.amazon.awssdk.core.sync.RequestBody
-import software.amazon.awssdk.core.sync.ResponseTransformer
-import software.amazon.awssdk.services.codebuild.CodeBuildClient
+import software.amazon.awssdk.core.async.AsyncRequestBody
+import software.amazon.awssdk.core.async.AsyncResponseTransformer
+import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
-import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.model.*
-import java.io.*
+import java.io.File
+import java.io.FileInputStream
 import java.nio.file.Paths
 import java.util.*
-import java.util.concurrent.ExecutionException
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
 
 class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
     // TODO
     // Should we have an option to use these clients with keys/secrets?
     // At this point the only way to use them is to use the environment variables
-    private val s3: S3Client = S3Client.builder().build()
-    private val codeBuild: CodeBuildClient = CodeBuildClient.builder().build()
+    private val s3: S3AsyncClient = S3AsyncClient.builder().build()
+    private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient.builder().build()
 
     // 1 - jar
     // 2 - feature
@@ -57,8 +57,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
     data class ScheduledJob(val originalJob: Job, val buildId: String, val info: SynnefoRunnerInfo, val junitDescription: Description)
 
-    @Throws(ExecutionException::class, InterruptedException::class)
-    fun schedule(job: Job): List<ScheduledJob> {
+    suspend fun schedule(job: Job): List<ScheduledJob> {
         if (job.featurePaths.isEmpty())
             return ArrayList()
 
@@ -67,7 +66,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
         return startBuilds(job, settings, sourceLocation)
     }
 
-    fun waitForJobs(jobs: List<ScheduledJob>) {
+    suspend fun waitForJobs(jobs: List<ScheduledJob>) {
         val queue = LinkedList<ScheduledJob>()
         queue.addAll(jobs)
 
@@ -84,7 +83,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                     .builder()
                     .ids(dequeuedIds)
                     .build()
-            val response = codeBuild.batchGetBuilds(request)
+            val response = codeBuild.batchGetBuilds(request).await()
             for (build in response.builds()) {
 
                 val originalJob = lookupDict.getValue(build.id())
@@ -106,7 +105,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                 }
             }
 
-            Thread.sleep(2000)
+            delay(2000)
         }
     }
 
@@ -122,25 +121,15 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                     .key(keyPath)
                     .build()!!
 
-            val stream = s3.getObject(getObjectRequest, ResponseTransformer.toInputStream())
-            unzip(stream, targetDirectory)
+            // TODO:
+            // parallel
+            val response = s3.getObject(getObjectRequest, AsyncResponseTransformer.toBytes()).get()
+
+            ZipHelper.unzip(response.asByteArray(), targetDirectory)
         }
     }
 
-    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>): String {
-        val sb = StringBuilder()
-        sb.appendWithEscaping("java")
-        sb.appendWithEscaping("-cp")
-        sb.appendWithEscaping("./../$jar")
-        sb.appendWithEscaping("cucumber.api.cli.Main")
-        sb.appendWithEscaping("./../$feature")
-        runtimeOptions.forEach { sb.appendWithEscaping(it) }
-
-        return String.format(this.buildSpecTemplate, sb.toString())
-    }
-
-    @Throws(ExecutionException::class, InterruptedException::class)
-    private fun uploadToS3AndGetSourcePath(job: Job, settings: SynnefoProperties): String {
+    private suspend fun uploadToS3AndGetSourcePath(job: Job, settings: SynnefoProperties): String {
         // TODO:
         // Make this whole thing properly async
 
@@ -158,8 +147,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
         return targetDirectory
     }
 
-    @Throws(ExecutionException::class, InterruptedException::class)
-    private fun ensureProjectExists(settings: SynnefoProperties) {
+    private suspend fun ensureProjectExists(settings: SynnefoProperties) {
         if (projectExists(settings.synnefoOptions.projectName)) {
             return
         }
@@ -167,20 +155,18 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
         createCodeBuildProject(settings)
     }
 
-    @Throws(ExecutionException::class, InterruptedException::class)
-    private fun projectExists(projectName: String?): Boolean {
+    private suspend fun projectExists(projectName: String?): Boolean {
 
         val batchGetProjectsRequest = BatchGetProjectsRequest
                 .builder()
                 .names(projectName)
                 .build()
 
-        val response = codeBuild.batchGetProjects(batchGetProjectsRequest)
+        val response = codeBuild.batchGetProjects(batchGetProjectsRequest).await()
         return response.projects().size == 1
     }
 
-    @Throws(ExecutionException::class, InterruptedException::class)
-    private fun createCodeBuildProject(settings: SynnefoProperties) {
+    private suspend fun createCodeBuildProject(settings: SynnefoProperties) {
         val sourceLocation = settings.synnefoOptions.bucketName + "/" + settings.synnefoOptions.bucketSourceFolder
 
         // TODO:
@@ -221,11 +207,10 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                 }
                 .build()
 
-        codeBuild.createProject(createRequest)
+        codeBuild.createProject(createRequest).await()
     }
 
-    @Throws(ExecutionException::class, InterruptedException::class)
-    private fun startBuilds(job: Job, settings: SynnefoProperties, sourceLocation: String): List<ScheduledJob> {
+    private suspend fun startBuilds(job: Job, settings: SynnefoProperties, sourceLocation: String): List<ScheduledJob> {
 
         val ids = ArrayList<ScheduledJob>()
         for (info in job.runnerInfos) {
@@ -246,7 +231,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                     .sourceLocationOverride(settings.synnefoOptions.bucketName + "/" + sourceLocation)
                     .build()
 
-            val startBuildResponse = codeBuild.startBuild(buildStartRequest)
+            val startBuildResponse = codeBuild.startBuild(buildStartRequest).await()
             val buildId = startBuildResponse.build().id()
             val junitDescription = Description.createTestDescription(info.cucumberFeatureLocation, info.cucumberFeatureLocation)
             job.notifier.fireTestStarted(junitDescription)
@@ -257,46 +242,54 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
         return ids
     }
 
-    private fun S3Client.multipartUploadFile(bucket: String, key: String, filePath: String, partSizeMb: Int) {
-        // TODO
-        // Make the chunks upload parallel
+    private fun readFileChunks(file: File, partSizeMb: Int) = sequence {
+        val contentLength = file.length()
+        var partSize = partSizeMb * 1024 * 1024
 
+        val stream = FileInputStream(file)
+        var filePosition: Long = 0
+        var i = 1
+
+        while (filePosition < contentLength) {
+            partSize = Math.min(partSize, (contentLength - filePosition).toInt())
+
+            val fileContent = ByteArray(partSize)
+            stream.read(fileContent, 0, partSize)
+
+            yield(Pair(i, fileContent))
+            filePosition += partSize
+            i++
+        }
+        stream.close()
+    }
+
+    private suspend fun S3AsyncClient.multipartUploadFile(bucket: String, key: String, filePath: String, partSizeMb: Int) {
+        val s3clientExt = this
         val createUploadRequest = CreateMultipartUploadRequest.builder()
                 .key(key)
                 .bucket(bucket)
                 .build()
 
         val file = File(filePath)
-        val contentLength = file.length()
-        var partSize = partSizeMb * 1024 * 1024L
 
-        val partETags = ArrayList<CompletedPart>()
-        val response = this.createMultipartUpload(createUploadRequest)
-        System.out.println(response.uploadId())
+        val response = s3clientExt.createMultipartUpload(createUploadRequest).await()
 
-        val stream = FileInputStream(file)
-        var filePosition: Long = 0
-        var i = 1
-        while (filePosition < contentLength) {
-            partSize = Math.min(partSize, contentLength - filePosition)
+        val chunks = readFileChunks(file, partSizeMb).toList()
 
+        val partETags =
+                chunks.map {
             val uploadRequest = UploadPartRequest.builder()
                     .bucket(bucket)
                     .key(key)
                     .uploadId(response.uploadId())
-                    .partNumber(i)
+                    .partNumber(it.first)
                     .build()
+            val data = AsyncRequestBody.fromBytes(it.second)
 
-            val data = RequestBody.fromInputStream(stream, partSize)
-            val etag = s3.uploadPart(uploadRequest, data).eTag()
+            val etag = s3clientExt.uploadPart(uploadRequest, data).await().eTag()
 
-            partETags.add(CompletedPart.builder().partNumber(i).eTag(etag).build())
-
-            filePosition += partSize
-            i++
+            CompletedPart.builder().partNumber(it.first).eTag(etag).build()
         }
-
-        stream.close()
 
         val completedMultipartUpload = CompletedMultipartUpload.builder().parts(partETags)
                 .build()
@@ -310,51 +303,17 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
         s3.completeMultipartUpload(completeMultipartUploadRequest)
     }
 
-    private fun <E> MutableList<E>.dequeueUpTo(limit: Int): MutableList<E> {
-        val from = Math.max(0, this.size - limit)
-        val to = Math.min(this.size, from + limit)
-        return this.subList(from, to)
+    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>): String {
+        val sb = StringBuilder()
+        sb.appendWithEscaping("java")
+        sb.appendWithEscaping("-cp")
+        sb.appendWithEscaping("./../$jar")
+        sb.appendWithEscaping("cucumber.api.cli.Main")
+        sb.appendWithEscaping("./../$feature")
+        runtimeOptions.forEach { sb.appendWithEscaping(it) }
+
+        return String.format(this.buildSpecTemplate, sb.toString())
     }
 
-    private fun StringBuilder.appendWithEscaping(s: String) {
-        if (s.contains(' '))
-            this.append("\"$s\" ")
-        else
-            this.append("$s ")
-    }
 
-    private fun unzip(fileZip: InputStream, dest: String) {
-        val destDir = File(dest)
-        destDir.mkdirs()
-        val buffer = ByteArray(1024)
-        val zis = ZipInputStream(fileZip)
-        var zipEntry: ZipEntry? = zis.nextEntry
-        while (zipEntry != null) {
-            val newFile = newFile(destDir, zipEntry)
-            val fos = FileOutputStream(newFile)
-            var len: Int
-            len = zis.read(buffer)
-            while (len > 0) {
-                fos.write(buffer, 0, len)
-                len = zis.read(buffer)
-            }
-            fos.close()
-            zipEntry = zis.nextEntry
-        }
-        zis.closeEntry()
-        zis.close()
-    }
-
-    private fun newFile(destinationDir: File, zipEntry: ZipEntry): File {
-        val destFile = File(destinationDir, zipEntry.name)
-
-        val destDirPath = destinationDir.canonicalPath
-        val destFilePath = destFile.canonicalPath
-
-        if (!destFilePath.startsWith(destDirPath + File.separator)) {
-            throw IOException("Entry is outside of the target dir: " + zipEntry.name)
-        }
-
-        return destFile
-    }
 }
