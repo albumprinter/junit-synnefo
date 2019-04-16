@@ -23,9 +23,7 @@ class SynnefoRunner(
         job.notifier.addFirstListener(result.createListener())
         job.notifier.fireTestRunStarted(Description.createSuiteDescription("Started the tests"))
         runBlocking {
-            val jobs = scheduler.schedule(job)
-            scheduler.waitForJobs(jobs)
-            scheduler.collectArtifacts(jobs)
+            scheduler.scheduleAndWait(job)
         }
         job.notifier.fireTestRunFinished(result)
     }

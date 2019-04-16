@@ -3,6 +3,7 @@ package albelli.junit.synnefo.runtime
 import albelli.junit.synnefo.runtime.exceptions.SynnefoTestFailureException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
+import kotlinx.coroutines.runBlocking
 import org.junit.runner.Description
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
@@ -57,16 +58,21 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
     data class ScheduledJob(val originalJob: Job, val buildId: String, val info: SynnefoRunnerInfo, val junitDescription: Description)
 
-    suspend fun schedule(job: Job): List<ScheduledJob> {
+    suspend fun scheduleAndWait(job: Job) = runBlocking {
         if (job.featurePaths.isEmpty())
-            return ArrayList()
+            return@runBlocking
 
         val sourceLocation = uploadToS3AndGetSourcePath(job, settings)
         ensureProjectExists(settings)
-        return startBuilds(job, settings, sourceLocation)
+
+        val jobs = startBuilds(job, settings, sourceLocation)
+
+        waitForJobs(jobs)
+
+        collectArtifacts(jobs)
     }
 
-    suspend fun waitForJobs(jobs: List<ScheduledJob>) {
+    private suspend fun waitForJobs(jobs: List<ScheduledJob>) {
         val queue = LinkedList<ScheduledJob>()
         queue.addAll(jobs)
 
@@ -109,7 +115,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
         }
     }
 
-    fun collectArtifacts(runResults: List<ScheduledJob>) {
+    private fun collectArtifacts(runResults: List<ScheduledJob>) {
         val targetDirectory = settings.synnefoOptions.reportTargetDir
 
         for (result in runResults) {
@@ -214,32 +220,39 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
         val ids = ArrayList<ScheduledJob>()
         for (info in job.runnerInfos) {
-            val buildSpec = generateBuildspecForFeature(Paths.get(job.jarPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions)
-            val buildStartRequest = StartBuildRequest.builder()
-                    .projectName(settings.synnefoOptions.projectName)
-                    .buildspecOverride(buildSpec)
-                    .imageOverride(settings.synnefoOptions.image)
-                    .computeTypeOverride(settings.synnefoOptions.computeType)
-                    .artifactsOverride { a -> a
-                                    .type(ArtifactsType.S3)
-                                    .path(settings.synnefoOptions.bucketOutputFolder)
-                                    .name(settings.synnefoOptions.outputFileName)
-                                    .namespaceType("BUILD_ID")
-                                    .packaging("ZIP")
-                                    .location(settings.synnefoOptions.bucketName)
-                        }
-                    .sourceLocationOverride(settings.synnefoOptions.bucketName + "/" + sourceLocation)
-                    .build()
-
-            val startBuildResponse = codeBuild.startBuild(buildStartRequest).await()
-            val buildId = startBuildResponse.build().id()
-            val junitDescription = Description.createTestDescription(info.cucumberFeatureLocation, info.cucumberFeatureLocation)
-            job.notifier.fireTestStarted(junitDescription)
-
-            ids.add(ScheduledJob(job, buildId, info, junitDescription))
+            val scheduledJob = startBuild(job, info, settings, sourceLocation)
+            ids.add(scheduledJob)
         }
 
         return ids
+    }
+
+    private suspend fun startBuild(job: Job, info: SynnefoRunnerInfo, settings: SynnefoProperties, sourceLocation: String): ScheduledJob {
+        val buildSpec = generateBuildspecForFeature(Paths.get(job.jarPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions)
+
+        val buildStartRequest = StartBuildRequest.builder()
+                .projectName(settings.synnefoOptions.projectName)
+                .buildspecOverride(buildSpec)
+                .imageOverride(settings.synnefoOptions.image)
+                .computeTypeOverride(settings.synnefoOptions.computeType)
+                .artifactsOverride { a ->
+                    a
+                            .type(ArtifactsType.S3)
+                            .path(settings.synnefoOptions.bucketOutputFolder)
+                            .name(settings.synnefoOptions.outputFileName)
+                            .namespaceType("BUILD_ID")
+                            .packaging("ZIP")
+                            .location(settings.synnefoOptions.bucketName)
+                }
+                .sourceLocationOverride(settings.synnefoOptions.bucketName + "/" + sourceLocation)
+                .build()
+
+        val startBuildResponse = codeBuild.startBuild(buildStartRequest).await()
+        val buildId = startBuildResponse.build().id()
+        val junitDescription = Description.createTestDescription(info.cucumberFeatureLocation, info.cucumberFeatureLocation)
+        job.notifier.fireTestStarted(junitDescription)
+
+        return ScheduledJob(job, buildId, info, junitDescription)
     }
 
     private fun readFileChunks(file: File, partSizeMb: Int) = sequence {
