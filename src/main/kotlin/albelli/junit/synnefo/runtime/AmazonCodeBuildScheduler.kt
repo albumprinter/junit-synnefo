@@ -74,14 +74,12 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
         val codeBuildRequestLimit = 100
 
-        while (backlog.size > 0 && currentQueue.size > 0) {
+        while (backlog.size > 0 || currentQueue.size > 0) {
 
             if(!currentQueue.isEmpty()) {
 
                 val lookupDict: Map<String, ScheduledJob> = currentQueue.associateBy({ it.buildId }, { it })
-                val dequeued = currentQueue.dequeueUpTo(codeBuildRequestLimit)
-                val dequeuedIds = dequeued.map { it.buildId }
-                dequeued.clear()
+                val dequeuedIds = currentQueue.dequeueUpTo(codeBuildRequestLimit).map { it.buildId }
 
                 val request = BatchGetBuildsRequest
                         .builder()
@@ -114,15 +112,15 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                 s3Tasks.awaitAll()
             }
 
-            val slots = settings.synnefoOptions.threads - currentQueue.size
+            val availableSlots = settings.synnefoOptions.threads - currentQueue.size
 
-            val deq = backlog.dequeueUpTo(slots)
-            val scheduledJobs = deq
-                    .map {
-                        GlobalScope.async { startBuild(job, settings, sourceLocation, it) }
-                    }
-                    .map { it.await() }
-            deq.clear()
+            val scheduledJobs =
+                    backlog
+                            .dequeueUpTo(availableSlots)
+                            .map {
+                                GlobalScope.async { startBuild(job, settings, sourceLocation, it) }
+                            }
+                            .map { it.await() }
 
             currentQueue.addAll(scheduledJobs)
 
