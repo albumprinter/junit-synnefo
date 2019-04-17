@@ -1,9 +1,8 @@
 package albelli.junit.synnefo.runtime
 
 import albelli.junit.synnefo.runtime.exceptions.SynnefoTestFailureException
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
-import kotlinx.coroutines.runBlocking
 import org.junit.runner.Description
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
@@ -65,79 +64,90 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
         val sourceLocation = uploadToS3AndGetSourcePath(job, settings)
         ensureProjectExists(settings)
 
-        val jobs = startBuilds(job, settings, sourceLocation)
-
-        waitForJobs(jobs)
-
-        collectArtifacts(jobs)
+        runAndWaitForJobs(job, sourceLocation)
     }
 
-    private suspend fun waitForJobs(jobs: List<ScheduledJob>) {
-        val queue = LinkedList<ScheduledJob>()
-        queue.addAll(jobs)
+    private suspend fun runAndWaitForJobs(job: Job, sourceLocation: String) {
+        val currentQueue: LinkedList<AmazonCodeBuildScheduler.ScheduledJob> = LinkedList()
 
-        val limit = 100
+        val backlog = job.runnerInfos.toMutableList()
 
-        while (!queue.isEmpty()) {
-            val lookupDict = queue.associateBy({ it.buildId }, { it })
+        val codeBuildRequestLimit = 100
 
-            val dequeued = queue.dequeueUpTo(limit)
-            val dequeuedIds = dequeued.map { it.buildId }
-            dequeued.clear()
+        while (backlog.size > 0 && currentQueue.size > 0) {
 
-            val request = BatchGetBuildsRequest
-                    .builder()
-                    .ids(dequeuedIds)
-                    .build()
-            val response = codeBuild.batchGetBuilds(request).await()
-            for (build in response.builds()) {
+            if(!currentQueue.isEmpty()) {
 
-                val originalJob = lookupDict.getValue(build.id())
+                val lookupDict: Map<String, ScheduledJob> = currentQueue.associateBy({ it.buildId }, { it })
+                val dequeued = currentQueue.dequeueUpTo(codeBuildRequestLimit)
+                val dequeuedIds = dequeued.map { it.buildId }
+                dequeued.clear()
 
-                when (build.buildStatus()!!) {
-                    STOPPED, TIMED_OUT, FAILED, FAULT ->
-                    {
-                        originalJob.originalJob.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
+                val request = BatchGetBuildsRequest
+                        .builder()
+                        .ids(dequeuedIds)
+                        .build()
+                val response = codeBuild.batchGetBuilds(request).await()
+
+                val s3Tasks = ArrayList<Deferred<Unit>>()
+                for (build in response.builds()) {
+
+                    val originalJob = lookupDict.getValue(build.id())
+
+                    when (build.buildStatus()!!) {
+                        STOPPED, TIMED_OUT, FAILED, FAULT -> {
+                            job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
+                            s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                        }
+
+                        SUCCEEDED -> {
+                            job.notifier.fireTestFinished(originalJob.junitDescription)
+                            s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                        }
+
+                        IN_PROGRESS -> currentQueue.addLast(originalJob)
+
+                        UNKNOWN_TO_SDK_VERSION -> job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Received a UNKNOWN_TO_SDK_VERSION enum! This should not have happened really.")))
                     }
-
-                    SUCCEEDED ->
-                    {
-                        originalJob.originalJob.notifier.fireTestFinished(originalJob.junitDescription)
-                    }
-
-                    IN_PROGRESS -> queue.addLast(originalJob)
-
-                    UNKNOWN_TO_SDK_VERSION -> throw Exception("nao we die")
                 }
+
+                s3Tasks.awaitAll()
             }
+
+            val slots = settings.synnefoOptions.threads - currentQueue.size
+
+            val deq = backlog.dequeueUpTo(slots)
+            val scheduledJobs = deq
+                    .map {
+                        GlobalScope.async { startBuild(job, settings, sourceLocation, it) }
+                    }
+                    .map { it.await() }
+            deq.clear()
+
+            currentQueue.addAll(scheduledJobs)
 
             delay(2000)
         }
     }
 
-    private fun collectArtifacts(runResults: List<ScheduledJob>) {
+    private suspend fun collectArtifact(result : ScheduledJob)
+    {
         val targetDirectory = settings.synnefoOptions.reportTargetDir
 
-        for (result in runResults) {
-            val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
-            val keyPath = "${settings.synnefoOptions.bucketOutputFolder}$buildId/${settings.synnefoOptions.outputFileName}"
+        val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
+        val keyPath = "${settings.synnefoOptions.bucketOutputFolder}$buildId/${settings.synnefoOptions.outputFileName}"
 
-            val getObjectRequest = GetObjectRequest.builder()
-                    .bucket(settings.synnefoOptions.bucketName)
-                    .key(keyPath)
-                    .build()!!
+        val getObjectRequest = GetObjectRequest.builder()
+                .bucket(settings.synnefoOptions.bucketName)
+                .key(keyPath)
+                .build()!!
 
-            // TODO:
-            // parallel
-            val response = s3.getObject(getObjectRequest, AsyncResponseTransformer.toBytes()).get()
+        val response = s3.getObject(getObjectRequest, AsyncResponseTransformer.toBytes()).await()
 
-            ZipHelper.unzip(response.asByteArray(), targetDirectory)
-        }
+        ZipHelper.unzip(response.asByteArray(), targetDirectory)
     }
 
     private suspend fun uploadToS3AndGetSourcePath(job: Job, settings: SynnefoProperties): String {
-        // TODO:
-        // Make this whole thing properly async
 
         val targetDirectory = settings.synnefoOptions.bucketSourceFolder + UUID.randomUUID() + "/"
 
@@ -175,8 +185,6 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
     private suspend fun createCodeBuildProject(settings: SynnefoProperties) {
         val sourceLocation = settings.synnefoOptions.bucketName + "/" + settings.synnefoOptions.bucketSourceFolder
 
-        // TODO:
-        // Make the project creation async
         val createRequest = CreateProjectRequest
                 .builder()
                 .name(settings.synnefoOptions.projectName)
@@ -216,11 +224,6 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
         codeBuild.createProject(createRequest).await()
     }
 
-    private suspend fun startBuilds(job: Job, settings: SynnefoProperties, sourceLocation: String): List<ScheduledJob> {
-        return job.runnerInfos.map {
-            startBuild(job, settings, sourceLocation, it)
-        }
-    }
 
     private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo): ScheduledJob {
         val buildSpec = generateBuildspecForFeature(Paths.get(job.jarPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions)
@@ -242,7 +245,8 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                 .sourceLocationOverride(settings.synnefoOptions.bucketName + "/" + sourceLocation)
                 .build()
 
-        val startBuildResponse = codeBuild.startBuild(buildStartRequest).await()
+
+        val startBuildResponse =  codeBuild.startBuild(buildStartRequest).await()
         val buildId = startBuildResponse.build().id()
         val junitDescription = Description.createTestDescription(info.cucumberFeatureLocation, info.cucumberFeatureLocation)
         job.notifier.fireTestStarted(junitDescription)
@@ -284,20 +288,37 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
         val chunks = readFileChunks(file, partSizeMb).toList()
 
-        val partETags =
-                chunks.map {
+        val partETags = ArrayList<CompletedPart>()
+
+        for(chunk in chunks)
+        {
             val uploadRequest = UploadPartRequest.builder()
                     .bucket(bucket)
                     .key(key)
                     .uploadId(response.uploadId())
-                    .partNumber(it.first)
+                    .partNumber(chunk.first)
                     .build()
-            val data = AsyncRequestBody.fromBytes(it.second)
+            val data = AsyncRequestBody.fromBytes(chunk.second)
 
             val etag = s3clientExt.uploadPart(uploadRequest, data).await().eTag()
 
-            CompletedPart.builder().partNumber(it.first).eTag(etag).build()
+            partETags.add(CompletedPart.builder().partNumber(chunk.first).eTag(etag).build())
         }
+
+//        val partETags =
+//                chunks.map {
+//            val uploadRequest = UploadPartRequest.builder()
+//                    .bucket(bucket)
+//                    .key(key)
+//                    .uploadId(response.uploadId())
+//                    .partNumber(it.first)
+//                    .build()
+//            val data = AsyncRequestBody.fromBytes(it.second)
+//
+//            val etag = s3clientExt.uploadPart(uploadRequest, data).await().eTag()
+//
+//            CompletedPart.builder().partNumber(it.first).eTag(etag).build()
+//        }
 
         val completedMultipartUpload = CompletedMultipartUpload.builder().parts(partETags)
                 .build()
@@ -308,7 +329,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                         .uploadId(response.uploadId())
                         .multipartUpload(completedMultipartUpload)
                         .build()
-        s3.completeMultipartUpload(completeMultipartUploadRequest)
+        s3clientExt.completeMultipartUpload(completeMultipartUploadRequest).await()
     }
 
     private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>): String {
@@ -322,6 +343,4 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
         return String.format(this.buildSpecTemplate, sb.toString())
     }
-
-
 }

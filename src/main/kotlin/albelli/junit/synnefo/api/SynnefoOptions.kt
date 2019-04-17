@@ -12,7 +12,7 @@ annotation class SynnefoOptions(
         /**
          * @return the number of parallel threads
          */
-        val threads: Int = 5,
+        val threads: Int = 2,
         /**
          * @return the run level (feature or scenario level)
          */
