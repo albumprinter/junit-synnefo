@@ -75,6 +75,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
         val codeBuildRequestLimit = 100
 
         while (backlog.size > 0 || currentQueue.size > 0) {
+            val s3Tasks = ArrayList<Deferred<Unit>>()
 
             if(!currentQueue.isEmpty()) {
 
@@ -87,7 +88,6 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                         .build()
                 val response = codeBuild.batchGetBuilds(request).await()
 
-                val s3Tasks = ArrayList<Deferred<Unit>>()
                 for (build in response.builds()) {
 
                     val originalJob = lookupDict.getValue(build.id())
@@ -108,8 +108,6 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                         UNKNOWN_TO_SDK_VERSION -> job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Received a UNKNOWN_TO_SDK_VERSION enum! This should not have happened really.")))
                     }
                 }
-
-                s3Tasks.awaitAll()
             }
 
             val availableSlots = settings.synnefoOptions.threads - currentQueue.size
@@ -124,6 +122,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
             currentQueue.addAll(scheduledJobs)
 
+            s3Tasks.awaitAll()
             delay(2000)
         }
     }
