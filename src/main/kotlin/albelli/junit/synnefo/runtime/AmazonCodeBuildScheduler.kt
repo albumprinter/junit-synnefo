@@ -68,7 +68,7 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
     }
 
     private suspend fun runAndWaitForJobs(job: Job, sourceLocation: String) {
-        val currentQueue: LinkedList<AmazonCodeBuildScheduler.ScheduledJob> = LinkedList()
+        val currentQueue = LinkedList<ScheduledJob>()
 
         val backlog = job.runnerInfos.toMutableList()
 
