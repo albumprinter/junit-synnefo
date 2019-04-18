@@ -8,10 +8,13 @@ import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.async.AsyncResponseTransformer
+import software.amazon.awssdk.core.sync.ResponseTransformer
+import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
 import software.amazon.awssdk.services.s3.S3AsyncClient
+import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.*
 import java.io.File
 import java.io.FileInputStream
@@ -139,9 +142,13 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                 .key(keyPath)
                 .build()!!
 
-        val response = s3.getObject(getObjectRequest, AsyncResponseTransformer.toBytes()).await()
+        val client = S3Client
+                .builder()
+                .region(Region.EU_WEST_1)
+                .build()
+        val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
-        ZipHelper.unzip(response.asByteArray(), targetDirectory)
+        ZipHelper.unzip(response, targetDirectory)
     }
 
     private suspend fun uploadToS3AndGetSourcePath(job: Job, settings: SynnefoProperties): String {
