@@ -60,9 +60,9 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
     data class ScheduledJob(val originalJob: Job, val buildId: String, val info: SynnefoRunnerInfo, val junitDescription: Description)
 
-    suspend fun scheduleAndWait(job: Job) = runBlocking {
+    suspend fun scheduleAndWait(job: Job) {
         if (job.featurePaths.isEmpty())
-            return@runBlocking
+            return
 
         val sourceLocation = uploadToS3AndGetSourcePath(job, settings)
         ensureProjectExists(settings)
