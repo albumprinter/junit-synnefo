@@ -77,8 +77,9 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
         val codeBuildRequestLimit = 100
 
+        val s3Tasks = ArrayList<Deferred<Unit>>()
+
         while (backlog.size > 0 || currentQueue.size > 0) {
-            val s3Tasks = ArrayList<Deferred<Unit>>()
 
             if(!currentQueue.isEmpty()) {
 
