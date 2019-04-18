@@ -126,9 +126,10 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
             currentQueue.addAll(scheduledJobs)
 
-            s3Tasks.awaitAll()
             delay(2000)
         }
+
+        s3Tasks.awaitAll()
     }
 
     private suspend fun collectArtifact(result : ScheduledJob)
