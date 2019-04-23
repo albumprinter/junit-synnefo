@@ -2,6 +2,7 @@ package albelli.junit.synnefo.runtime
 
 import albelli.junit.synnefo.api.SynnefoOptions
 import albelli.junit.synnefo.api.SynnefoRunLevel
+import albelli.junit.synnefo.runtime.exceptions.SynnefoException
 import cucumber.api.CucumberOptions
 
 internal class SynnefoProperties(
@@ -26,10 +27,10 @@ internal class SynnefoProperties(
             getAnyVar("reportTargetDir", opt.reportTargetDir),
             opt.cucumberOptions,
             getAnyVar("projectName", opt.projectName),
-            getAnyVar("serviceRole", opt.serviceRole),
+            getAnyVarOrFail("serviceRole", opt.serviceRole),
             getAnyVar("image", opt.image),
             getAnyVar("computeType", opt.computeType),
-            getAnyVar("bucketName", opt.bucketName),
+            getAnyVarOrFail("bucketName", opt.bucketName),
             getAnyVar("bucketSourceFolder", opt.bucketSourceFolder),
             getAnyVar("bucketOutputFolder", opt.bucketOutputFolder),
             getAnyVar("outputFileName", opt.outputFileName),
@@ -83,6 +84,17 @@ internal class SynnefoProperties(
         {
             val anyVar = getAnyVar(varName)
             return anyVar ?: default
+        }
+
+        @Throws(SynnefoException::class)
+        private fun getAnyVarOrFail(varName: String, default: String) : String
+        {
+            val anyVar = getAnyVar(varName, default)
+
+            if (anyVar.isNullOrWhiteSpace())
+                throw SynnefoException("Variable $varName is not set, while it should be")
+            else
+                return anyVar
         }
     }
 }
