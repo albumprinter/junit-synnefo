@@ -295,37 +295,20 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
         val chunks = readFileChunks(file, partSizeMb).toList()
 
-        val partETags = ArrayList<CompletedPart>()
-
-        for(chunk in chunks)
-        {
+        val partETags =
+                chunks.map {
             val uploadRequest = UploadPartRequest.builder()
                     .bucket(bucket)
                     .key(key)
                     .uploadId(response.uploadId())
-                    .partNumber(chunk.first)
+                    .partNumber(it.first)
                     .build()
-            val data = AsyncRequestBody.fromBytes(chunk.second)
+            val data = AsyncRequestBody.fromBytes(it.second)
 
             val etag = s3clientExt.uploadPart(uploadRequest, data).await().eTag()
 
-            partETags.add(CompletedPart.builder().partNumber(chunk.first).eTag(etag).build())
+            CompletedPart.builder().partNumber(it.first).eTag(etag).build()
         }
-
-//        val partETags =
-//                chunks.map {
-//            val uploadRequest = UploadPartRequest.builder()
-//                    .bucket(bucket)
-//                    .key(key)
-//                    .uploadId(response.uploadId())
-//                    .partNumber(it.first)
-//                    .build()
-//            val data = AsyncRequestBody.fromBytes(it.second)
-//
-//            val etag = s3clientExt.uploadPart(uploadRequest, data).await().eTag()
-//
-//            CompletedPart.builder().partNumber(it.first).eTag(etag).build()
-//        }
 
         val completedMultipartUpload = CompletedMultipartUpload.builder().parts(partETags)
                 .build()
