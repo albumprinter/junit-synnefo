@@ -7,7 +7,6 @@ import org.junit.runner.Description
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
 import software.amazon.awssdk.core.async.AsyncRequestBody
-import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.core.sync.ResponseTransformer
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
@@ -146,7 +145,6 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
         val client = S3Client
                 .builder()
-                .region(Region.EU_WEST_1)
                 .build()
         val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
