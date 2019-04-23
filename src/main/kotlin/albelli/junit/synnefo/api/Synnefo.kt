@@ -14,7 +14,7 @@ import java.net.URISyntaxException
 import java.util.*
 
 @Suppress("unused")
-class Synnefo @Throws(InitializationError::class, URISyntaxException::class)
+class Synnefo
 constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
     private val synnefoLoader: SynnefoLoader
     private val synnefoProperties: SynnefoProperties

@@ -7,7 +7,6 @@ import org.junit.runner.Description
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
 import software.amazon.awssdk.core.async.AsyncRequestBody
-import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.core.sync.ResponseTransformer
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
@@ -144,9 +143,11 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                 .key(keyPath)
                 .build()!!
 
+        // TODO:
+        // Use the async client from above
+        // Once the buggy S3 client is fixed by Amazon
         val client = S3Client
                 .builder()
-                .region(Region.EU_WEST_1)
                 .build()
         val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
@@ -294,37 +295,20 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
 
         val chunks = readFileChunks(file, partSizeMb).toList()
 
-        val partETags = ArrayList<CompletedPart>()
-
-        for(chunk in chunks)
-        {
+        val partETags =
+                chunks.map {
             val uploadRequest = UploadPartRequest.builder()
                     .bucket(bucket)
                     .key(key)
                     .uploadId(response.uploadId())
-                    .partNumber(chunk.first)
+                    .partNumber(it.first)
                     .build()
-            val data = AsyncRequestBody.fromBytes(chunk.second)
+            val data = AsyncRequestBody.fromBytes(it.second)
 
             val etag = s3clientExt.uploadPart(uploadRequest, data).await().eTag()
 
-            partETags.add(CompletedPart.builder().partNumber(chunk.first).eTag(etag).build())
+            CompletedPart.builder().partNumber(it.first).eTag(etag).build()
         }
-
-//        val partETags =
-//                chunks.map {
-//            val uploadRequest = UploadPartRequest.builder()
-//                    .bucket(bucket)
-//                    .key(key)
-//                    .uploadId(response.uploadId())
-//                    .partNumber(it.first)
-//                    .build()
-//            val data = AsyncRequestBody.fromBytes(it.second)
-//
-//            val etag = s3clientExt.uploadPart(uploadRequest, data).await().eTag()
-//
-//            CompletedPart.builder().partNumber(it.first).eTag(etag).build()
-//        }
 
         val completedMultipartUpload = CompletedMultipartUpload.builder().parts(partETags)
                 .build()
