@@ -143,6 +143,9 @@ class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
                 .key(keyPath)
                 .build()!!
 
+        // TODO:
+        // Use the async client from above
+        // Once the buggy S3 client is fixed by Amazon
         val client = S3Client
                 .builder()
                 .build()
