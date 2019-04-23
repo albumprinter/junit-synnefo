@@ -34,7 +34,7 @@ annotation class SynnefoOptions(
         /**
          * @return the arn to the AWS IAM service role to run the codebuild jobs
          */
-        val serviceRole: String,
+        val serviceRole: String = "",
 
         /**
          * @return the name of the docker image to run the job on (/aws/codebuild or docker hub or ECR)
@@ -49,7 +49,7 @@ annotation class SynnefoOptions(
         /**
          * @return the name of the bucket to put the jar and artifacts in
          */
-        val bucketName: String,
+        val bucketName: String = "",
         /**
          * @return the folder within the bucket to put the jar in
          */
@@ -62,20 +62,4 @@ annotation class SynnefoOptions(
          * @return the name of the zipped artifacts file
          */
         val outputFileName: String = "runResults.zip"
-
-) {
-    companion object {
-        internal val OUTPUT_FILE = "Synnefo.outputFile"
-        internal val THREADS = "Synnefo.threads"
-        internal val RUN_LEVEL = "Synnefo.runLevel"
-        internal val VM_OPTIONS = "Synnefo.vmoptions"
-        internal val REPORT_TARGET_DIR = "Synnefo.reportTargetDir"
-        internal val PROJECT_NAME = "Synnefo.projectName"
-        internal val BUCKET_OUTPUT = "Synnefo.bucketOutputFolder"
-        internal val BUCKET_SOURCE = "Synnefo.bucketSourceFolder"
-        internal val BUCKET_NAME = "Synnefo.bucketName"
-        internal val COMPUTE_TYPE = "Synnefo.computeType"
-        internal val IMAGE = "Synnefo.image"
-        internal val SERVICE_ROLE = "Synnefo.serviceRole"
-    }
-}
+)

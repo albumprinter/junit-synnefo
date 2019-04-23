@@ -2,6 +2,7 @@ package albelli.junit.synnefo.api
 
 import albelli.junit.synnefo.runtime.*
 import albelli.junit.synnefo.runtime.exceptions.SynnefoException
+import cucumber.api.CucumberOptions
 import cucumber.runtime.junit.FeatureRunner
 import cucumber.runtime.model.CucumberFeature
 import org.junit.runner.Description
@@ -23,12 +24,7 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
     private val callbacks: SynnefoCallbacks
 
     init {
-        val opt  =
-                (clazz.declaredAnnotations
-                        .firstOrNull {
-                            it is SynnefoOptions }
-                            ?: throw SynnefoException("Runner class is not annotated with @SynnefoOptions")
-                ) as SynnefoOptions
+        val opt  = loadOptions(clazz)
 
         val classPath = File(clazz.protectionDomain.codeSource.location.toURI()).path
         callbacks = SynnefoCallbacks(clazz)
@@ -40,13 +36,13 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
 
         synnefoProperties = SynnefoProperties(opt, classPath, cucumberFeatures.map { it.uri.schemeSpecificPart })
 
-        if (opt.runLevel == SynnefoRunLevel.FEATURE) {
+        if (synnefoProperties.runLevel == SynnefoRunLevel.FEATURE) {
             for (feature in cucumberFeatures) {
-                runnerInfoList.add(SynnefoRunnerInfo(opt, feature, null))
+                runnerInfoList.add(SynnefoRunnerInfo(synnefoProperties, feature, null))
             }
         } else {
             for ((line, scenario) in synnefoLoader.getCucumberScenarios()) {
-                runnerInfoList.add(SynnefoRunnerInfo(opt, scenario, line))
+                runnerInfoList.add(SynnefoRunnerInfo(synnefoProperties, scenario, line))
             }
         }
     }
@@ -72,5 +68,16 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
 
     override fun runChild(child: FeatureRunner, notifier: RunNotifier) {
         throw NotImplementedException()
+    }
+
+    private fun loadOptions(clazz: Class<*>): SynnefoProperties {
+        val opt  =
+                (clazz.declaredAnnotations
+                        .firstOrNull {
+                            it is SynnefoOptions }
+                        ?: throw SynnefoException("Runner class is not annotated with @SynnefoOptions")
+                        ) as SynnefoOptions
+
+        return SynnefoProperties(opt)
     }
 }

@@ -15,3 +15,7 @@ internal fun StringBuilder.appendWithEscaping(s: String) {
     else
         this.append("$s ")
 }
+
+internal fun String.isNullOrWhiteSpace(): Boolean {
+    return this.trim { it <= ' ' }.isEmpty()
+}
