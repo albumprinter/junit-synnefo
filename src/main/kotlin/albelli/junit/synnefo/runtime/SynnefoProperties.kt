@@ -59,11 +59,12 @@ internal class SynnefoProperties(
 
         private fun getAnyVar(varName: String) : String?
         {
-            val fullVarName = "Synnefo.$varName"
+            val propertyName = "Synnefo.$varName"
+            val environmentName = "Synnefo_$varName"
 
-            val prop = System.getProperty(fullVarName)
+            val prop = System.getProperty(propertyName)
             if(prop == null || prop.isNullOrWhiteSpace()) {
-                val envVar = System.getenv(varName)
+                val envVar = System.getenv(environmentName)
                 return if(envVar == null || envVar.isNullOrWhiteSpace()) {
                     null
                 } else {
