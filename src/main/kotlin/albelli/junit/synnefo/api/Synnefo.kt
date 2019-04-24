@@ -2,16 +2,13 @@ package albelli.junit.synnefo.api
 
 import albelli.junit.synnefo.runtime.*
 import albelli.junit.synnefo.runtime.exceptions.SynnefoException
-import cucumber.api.CucumberOptions
 import cucumber.runtime.junit.FeatureRunner
 import cucumber.runtime.model.CucumberFeature
 import org.junit.runner.Description
 import org.junit.runner.notification.RunNotifier
 import org.junit.runners.ParentRunner
-import org.junit.runners.model.InitializationError
 import sun.reflect.generics.reflectiveObjects.NotImplementedException
 import java.io.File
-import java.net.URISyntaxException
 import java.util.*
 
 @Suppress("unused")
@@ -59,7 +56,7 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
     }
 
     public override fun getChildren(): List<FeatureRunner> {
-        throw NotImplementedException()
+        return listOf()
     }
 
     override fun describeChild(child: FeatureRunner): Description {
