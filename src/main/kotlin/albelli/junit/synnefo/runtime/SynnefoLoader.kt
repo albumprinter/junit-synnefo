@@ -1,6 +1,5 @@
 package albelli.junit.synnefo.runtime
 
-import albelli.junit.synnefo.api.SynnefoOptions
 import cucumber.runtime.ClassFinder
 import cucumber.runtime.FeaturePathFeatureSupplier
 import cucumber.runtime.RuntimeOptions
@@ -15,7 +14,7 @@ import gherkin.ast.ScenarioOutline
 
 import java.util.*
 
-class SynnefoLoader(private val synnefoProperties: SynnefoOptions, classLoader: ClassLoader) {
+internal class SynnefoLoader(private val synnefoProperties: SynnefoProperties, classLoader: ClassLoader) {
     private val resourceLoader: ResourceLoader
     private val featureSupplier: FeaturePathFeatureSupplier
     private val runtimeOptions: RuntimeOptions

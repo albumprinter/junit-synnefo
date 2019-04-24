@@ -5,7 +5,7 @@ import org.junit.runner.Description
 import org.junit.runner.Result
 import org.junit.runner.notification.RunNotifier
 
-class SynnefoRunner(
+internal class SynnefoRunner(
         private val runnerInfoList: List<SynnefoRunnerInfo>,
         private val synnefoProperties: SynnefoProperties,
         private val notifier: RunNotifier) {
