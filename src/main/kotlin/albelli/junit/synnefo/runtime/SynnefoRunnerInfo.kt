@@ -17,6 +17,7 @@ internal class SynnefoRunnerInfo(
             val featureLocation = this.cucumberFeature.uri
                     .toString()
                     .replace("classpath:/","classpath:") // hack for the cucumber loader
+                    .replace("file:", "")
 
             return if (synnefoRunLevel == SynnefoRunLevel.SCENARIO && lineId != null) {
                 String.format("%s:%s", featureLocation, lineId)
