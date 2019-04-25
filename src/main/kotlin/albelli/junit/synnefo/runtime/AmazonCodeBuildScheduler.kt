@@ -8,7 +8,6 @@ import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.sync.ResponseTransformer
-import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
@@ -16,11 +15,12 @@ import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.*
 import java.io.File
-import java.io.FileInputStream
+import java.net.URI
 import java.nio.file.Paths
 import java.util.*
 
-internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties) {
+
+internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties, private val classLoader: ClassLoader) {
 
     // TODO
     // Should we have an option to use these clients with keys/secrets?
@@ -53,7 +53,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties)
     internal data class Job(
             val runnerInfos: List<SynnefoRunnerInfo>,
             val jarPath: String,
-            val featurePaths: List<String>,
+            val featurePaths: List<URI>,
             val notifier: RunNotifier
     )
 
@@ -152,9 +152,12 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties)
         val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
         ZipHelper.unzip(response, targetDirectory)
+        println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
 
     private suspend fun uploadToS3AndGetSourcePath(job: Job, settings: SynnefoProperties): String {
+
+        println("uploadToS3AndGetSourcePath")
 
         val targetDirectory = settings.bucketSourceFolder + UUID.randomUUID() + "/"
 
@@ -162,11 +165,15 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties)
         val jarFileName = jarPath.fileName.toString()
 
         for (feature in job.featurePaths) {
-            s3.multipartUploadFile(settings.bucketName, targetDirectory + feature, feature, 5)
+            if (!feature.scheme.equals("classpath", true))
+            {
+                s3.multipartUploadFile(settings.bucketName, targetDirectory + feature.schemeSpecificPart, feature, 5)
+            }
         }
 
-        s3.multipartUploadFile(settings.bucketName, targetDirectory + jarFileName, job.jarPath, 5)
+        s3.multipartUploadFile(settings.bucketName, targetDirectory + jarFileName, File(job.jarPath).toURI(), 5)
 
+        println("uploadToS3AndGetSourcePath done; path: $targetDirectory")
         return targetDirectory
     }
 
@@ -255,17 +262,20 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties)
 
         val startBuildResponse =  codeBuild.startBuild(buildStartRequest).await()
         val buildId = startBuildResponse.build().id()
-        val junitDescription = Description.createTestDescription(info.cucumberFeatureLocation, info.cucumberFeatureLocation)
+        val junitDescription = Description.createTestDescription("Synnefo", info.cucumberFeatureLocation)
         job.notifier.fireTestStarted(junitDescription)
 
         return ScheduledJob(job, buildId, info, junitDescription)
     }
 
-    private fun readFileChunks(file: File, partSizeMb: Int) = sequence {
-        val contentLength = file.length()
+    private fun readFileChunks(file: URI, partSizeMb: Int) = sequence {
+
+        val connection = file.toValidURL(classLoader).openConnection()
+        val stream = connection.getInputStream()
+
+        val contentLength = connection.contentLength
         var partSize = partSizeMb * 1024 * 1024
 
-        val stream = FileInputStream(file)
         var filePosition: Long = 0
         var i = 1
 
@@ -282,24 +292,24 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties)
         stream.close()
     }
 
-    private suspend fun S3AsyncClient.multipartUploadFile(bucket: String, key: String, filePath: String, partSizeMb: Int) {
+    private suspend fun S3AsyncClient.multipartUploadFile(bucket: String, key: String, filePath: URI, partSizeMb: Int) {
         val s3clientExt = this
+        val filteredKey = key.replace("//", "/")
+
         val createUploadRequest = CreateMultipartUploadRequest.builder()
-                .key(key)
+                .key(filteredKey)
                 .bucket(bucket)
                 .build()
 
-        val file = File(filePath)
-
         val response = s3clientExt.createMultipartUpload(createUploadRequest).await()
 
-        val chunks = readFileChunks(file, partSizeMb).toList()
+        val chunks = readFileChunks(filePath, partSizeMb).toList()
 
         val partETags =
                 chunks.map {
             val uploadRequest = UploadPartRequest.builder()
                     .bucket(bucket)
-                    .key(key)
+                    .key(filteredKey)
                     .uploadId(response.uploadId())
                     .partNumber(it.first)
                     .build()
@@ -315,7 +325,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties)
         val completeMultipartUploadRequest =
                 CompleteMultipartUploadRequest.builder()
                         .bucket(bucket)
-                        .key(key)
+                        .key(filteredKey)
                         .uploadId(response.uploadId())
                         .multipartUpload(completedMultipartUpload)
                         .build()
@@ -328,9 +338,16 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties)
         sb.appendWithEscaping("-cp")
         sb.appendWithEscaping("./../$jar")
         sb.appendWithEscaping("cucumber.api.cli.Main")
-        sb.appendWithEscaping("./../$feature")
+        if(feature.startsWith("classpath")) {
+            sb.appendWithEscaping(feature)
+        }
+        else {
+            sb.appendWithEscaping("./../$feature")
+        }
         runtimeOptions.forEach { sb.appendWithEscaping(it) }
 
         return String.format(this.buildSpecTemplate, sb.toString())
     }
+
+
 }

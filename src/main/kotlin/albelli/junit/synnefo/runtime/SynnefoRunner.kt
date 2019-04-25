@@ -8,9 +8,10 @@ import org.junit.runner.notification.RunNotifier
 internal class SynnefoRunner(
         private val runnerInfoList: List<SynnefoRunnerInfo>,
         private val synnefoProperties: SynnefoProperties,
-        private val notifier: RunNotifier) {
+        private val notifier: RunNotifier,
+        private val classLoader: ClassLoader) {
 
-    private val scheduler: AmazonCodeBuildScheduler = AmazonCodeBuildScheduler(synnefoProperties)
+    private val scheduler: AmazonCodeBuildScheduler = AmazonCodeBuildScheduler(synnefoProperties, classLoader)
 
     fun run() {
         val job = AmazonCodeBuildScheduler.Job(
