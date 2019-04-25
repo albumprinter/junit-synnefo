@@ -262,7 +262,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
         val startBuildResponse =  codeBuild.startBuild(buildStartRequest).await()
         val buildId = startBuildResponse.build().id()
-        val junitDescription = Description.createTestDescription(info.cucumberFeatureLocation, info.cucumberFeatureLocation)
+        val junitDescription = Description.createTestDescription("Synnefo", info.cucumberFeatureLocation)
         job.notifier.fireTestStarted(junitDescription)
 
         return ScheduledJob(job, buildId, info, junitDescription)
