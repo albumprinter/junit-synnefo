@@ -25,7 +25,7 @@ internal fun String.isNullOrWhiteSpace(): Boolean {
 }
 
 internal fun URI.toValidURL(classLoader: ClassLoader): URL {
-    if ("classpath" == this.scheme) {
+    if ("classpath" == this.scheme.toLowerCase()) {
         var path = this.path
         if (path.startsWith("/")) {
             path = path.substring("/".length)
