@@ -1,4 +1,5 @@
 # Synnefo
+[ ![Package Page](https://api.bintray.com/packages/derwasp/random/junit.synnefo/images/download.svg) ](https://bintray.com/derwasp/random/junit.synnefo/)
 
 Synnefo: run your Cucumber test in parallel via AWS CodeBuild and JUnit.
 
