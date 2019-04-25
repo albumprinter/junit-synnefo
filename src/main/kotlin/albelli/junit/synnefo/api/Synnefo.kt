@@ -14,24 +14,27 @@ import java.util.*
 @Suppress("unused")
 class Synnefo
 constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
+
     private val synnefoLoader: SynnefoLoader
     private val synnefoProperties: SynnefoProperties
     private val cucumberFeatures: List<CucumberFeature>
     private val runnerInfoList: MutableList<SynnefoRunnerInfo>
     private val callbacks: SynnefoCallbacks
+    private val classLoader: ClassLoader = clazz.classLoader!!
 
     init {
+
         val opt  = loadOptions(clazz)
 
         val classPath = File(clazz.protectionDomain.codeSource.location.toURI()).path
         callbacks = SynnefoCallbacks(clazz)
 
-        synnefoLoader = SynnefoLoader(opt, clazz.classLoader)
+        synnefoLoader = SynnefoLoader(opt, classLoader)
         cucumberFeatures = synnefoLoader.getCucumberFeatures()
 
         runnerInfoList = ArrayList()
 
-        synnefoProperties = SynnefoProperties(opt, classPath, cucumberFeatures.map { it.uri.schemeSpecificPart })
+        synnefoProperties = SynnefoProperties(opt, classPath, cucumberFeatures.map { it.uri })
 
         if (synnefoProperties.runLevel == SynnefoRunLevel.FEATURE) {
             for (feature in cucumberFeatures) {
@@ -45,7 +48,7 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
     }
 
     override fun run(notifier: RunNotifier) {
-        val synnefoRunner = SynnefoRunner(runnerInfoList, synnefoProperties, notifier)
+        val synnefoRunner = SynnefoRunner(runnerInfoList, synnefoProperties, notifier, classLoader)
 
         try {
             callbacks.beforeAll()

@@ -4,6 +4,7 @@ import albelli.junit.synnefo.api.SynnefoOptions
 import albelli.junit.synnefo.api.SynnefoRunLevel
 import albelli.junit.synnefo.runtime.exceptions.SynnefoException
 import cucumber.api.CucumberOptions
+import java.net.URI
 
 internal class SynnefoProperties(
         val threads: Int ,
@@ -19,7 +20,7 @@ internal class SynnefoProperties(
         val bucketOutputFolder: String,
         val outputFileName: String,
         val classPath: String,
-        val featurePaths: List<String>)
+        val featurePaths: List<URI>)
 {
     constructor(opt: SynnefoOptions): this(
             getAnyVar("threads", opt.threads),
@@ -38,7 +39,7 @@ internal class SynnefoProperties(
             listOf()
             )
 
-    constructor(opt: SynnefoProperties, classPath: String, featurePaths: List<String>): this(
+    constructor(opt: SynnefoProperties, classPath: String, featurePaths: List<URI>): this(
             opt.threads,
             opt.runLevel,
             opt.reportTargetDir,
