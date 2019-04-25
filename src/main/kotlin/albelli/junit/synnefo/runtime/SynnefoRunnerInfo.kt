@@ -14,7 +14,9 @@ internal class SynnefoRunnerInfo(
 
     val cucumberFeatureLocation: String
         get() {
-            val featureLocation = this.cucumberFeature.uri.schemeSpecificPart
+            val featureLocation = this.cucumberFeature.uri
+                    .toString()
+                    .replace("classpath:/","classpath:") // hack for the cucumber loader
 
             return if (synnefoRunLevel == SynnefoRunLevel.SCENARIO && lineId != null) {
                 String.format("%s:%s", featureLocation, lineId)

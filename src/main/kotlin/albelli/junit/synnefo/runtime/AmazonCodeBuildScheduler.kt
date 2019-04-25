@@ -16,7 +16,6 @@ import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.*
 import java.io.File
 import java.net.URI
-import java.net.URL
 import java.nio.file.Paths
 import java.util.*
 
@@ -166,7 +165,10 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
         val jarFileName = jarPath.fileName.toString()
 
         for (feature in job.featurePaths) {
-            s3.multipartUploadFile(settings.bucketName, targetDirectory + feature.schemeSpecificPart, feature, 5)
+            if (!feature.scheme.equals("classpath", true))
+            {
+                s3.multipartUploadFile(settings.bucketName, targetDirectory + feature.schemeSpecificPart, feature, 5)
+            }
         }
 
         s3.multipartUploadFile(settings.bucketName, targetDirectory + jarFileName, File(job.jarPath).toURI(), 5)
@@ -336,7 +338,12 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
         sb.appendWithEscaping("-cp")
         sb.appendWithEscaping("./../$jar")
         sb.appendWithEscaping("cucumber.api.cli.Main")
-        sb.appendWithEscaping("./../$feature")
+        if(feature.startsWith("classpath")) {
+            sb.appendWithEscaping(feature)
+        }
+        else {
+            sb.appendWithEscaping("./../$feature")
+        }
         runtimeOptions.forEach { sb.appendWithEscaping(it) }
 
         return String.format(this.buildSpecTemplate, sb.toString())
