@@ -48,7 +48,7 @@ annotation class SynnefoOptions(
         /**
          * @return the name of the docker image to run the job on (/aws/codebuild or docker hub or ECR)
          */
-        val image: String = "albelli/aws-codebuild-docker-images:java-openjdk-8-chromedriver",
+        val image: String = "aws/codebuild/standard:2.0",
 
         /**
          * @return the type of the CodeBuild instance to use
