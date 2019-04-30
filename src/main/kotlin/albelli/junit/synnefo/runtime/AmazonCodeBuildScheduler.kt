@@ -19,7 +19,6 @@ import java.io.File
 import java.net.URI
 import java.nio.file.Paths
 import java.util.*
-import software.amazon.awssdk.services.s3.model.ListObjectsRequest
 
 internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties, private val classLoader: ClassLoader) {
 
@@ -87,7 +86,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
         val listResponse = s3.listObjects(listObjectsRequest).await()
 
 
-        val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it).build() }
+        val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
 
         val deleteObjectsRequest = DeleteObjectsRequest.builder()
                 .bucket(bucketName)
@@ -182,7 +181,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
         val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
         ZipHelper.unzip(response, targetDirectory)
-        deleteS3uploads(settings.bucketName, keyPath)
+        s3.deleteS3uploads(settings.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
 
