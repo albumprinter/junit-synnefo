@@ -1,5 +1,6 @@
 package albelli.junit.synnefo.runtime
 
+import albelli.junit.synnefo.runtime.exceptions.SynnefoException
 import albelli.junit.synnefo.runtime.exceptions.SynnefoTestFailureException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
@@ -18,7 +19,6 @@ import java.io.File
 import java.net.URI
 import java.nio.file.Paths
 import java.util.*
-
 
 internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties, private val classLoader: ClassLoader) {
 
@@ -70,6 +70,30 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
         runAndWaitForJobs(job, sourceLocation)
         println("all jobs have finished")
+        s3.deleteS3uploads(settings.bucketName, sourceLocation)
+    }
+
+    private suspend fun S3AsyncClient.deleteS3uploads(bucketName: String, prefix: String) {
+        if(prefix.isNullOrWhiteSpace())
+            throw SynnefoException("prefix can't be empty")
+
+        val listObjectsRequest = ListObjectsRequest
+                .builder()
+                .bucket(bucketName)
+                .prefix(prefix)
+                .build()
+
+        val listResponse = s3.listObjects(listObjectsRequest).await()
+
+
+        val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
+
+        val deleteObjectsRequest = DeleteObjectsRequest.builder()
+                .bucket(bucketName)
+                .delete { t -> t.objects(identifiers) }
+                .build()
+
+        this.deleteObjects(deleteObjectsRequest).await()
     }
 
     private suspend fun runAndWaitForJobs(job: Job, sourceLocation: String) {
@@ -157,6 +181,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
         val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
         ZipHelper.unzip(response, targetDirectory)
+        s3.deleteS3uploads(settings.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
 
