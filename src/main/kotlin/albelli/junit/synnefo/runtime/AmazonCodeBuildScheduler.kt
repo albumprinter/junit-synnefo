@@ -18,7 +18,7 @@ import java.io.File
 import java.net.URI
 import java.nio.file.Paths
 import java.util.*
-
+import software.amazon.awssdk.services.s3.model.ListObjectsRequest
 
 internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties, private val classLoader: ClassLoader) {
 
@@ -70,6 +70,27 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
         runAndWaitForJobs(job, sourceLocation)
         println("all jobs have finished")
+        deleteS3uploads(settings, sourceLocation)
+    }
+
+    private suspend fun deleteS3uploads(settings: SynnefoProperties, sourceLocation: String) {
+        val listObjectsRequest = ListObjectsRequest
+                .builder()
+                .bucket(settings.bucketName)
+                .prefix(sourceLocation)
+                .build()
+
+        val listResponse = s3.listObjects(listObjectsRequest).await()
+
+
+        val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it).build() }
+
+        val deleteObjectsRequest = DeleteObjectsRequest.builder()
+                .bucket(settings.bucketName)
+                .delete { t -> t.objects(identifiers) }
+                .build()
+
+        s3.deleteObjects(deleteObjectsRequest).await()
     }
 
     private suspend fun runAndWaitForJobs(job: Job, sourceLocation: String) {
