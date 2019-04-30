@@ -1,5 +1,6 @@
 package albelli.junit.synnefo.runtime
 
+import albelli.junit.synnefo.runtime.exceptions.SynnefoException
 import albelli.junit.synnefo.runtime.exceptions.SynnefoTestFailureException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
@@ -70,14 +71,17 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
         runAndWaitForJobs(job, sourceLocation)
         println("all jobs have finished")
-        deleteS3uploads(settings, sourceLocation)
+        s3.deleteS3uploads(settings.bucketName, sourceLocation)
     }
 
-    private suspend fun deleteS3uploads(settings: SynnefoProperties, sourceLocation: String) {
+    private suspend fun S3AsyncClient.deleteS3uploads(bucketName: String, prefix: String) {
+        if(prefix.isNullOrWhiteSpace())
+            throw SynnefoException("prefix can't be empty")
+
         val listObjectsRequest = ListObjectsRequest
                 .builder()
-                .bucket(settings.bucketName)
-                .prefix(sourceLocation)
+                .bucket(bucketName)
+                .prefix(prefix)
                 .build()
 
         val listResponse = s3.listObjects(listObjectsRequest).await()
@@ -86,11 +90,11 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
         val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it).build() }
 
         val deleteObjectsRequest = DeleteObjectsRequest.builder()
-                .bucket(settings.bucketName)
+                .bucket(bucketName)
                 .delete { t -> t.objects(identifiers) }
                 .build()
 
-        s3.deleteObjects(deleteObjectsRequest).await()
+        this.deleteObjects(deleteObjectsRequest).await()
     }
 
     private suspend fun runAndWaitForJobs(job: Job, sourceLocation: String) {
