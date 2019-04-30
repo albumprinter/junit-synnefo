@@ -28,8 +28,6 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
     private val s3: S3AsyncClient = S3AsyncClient.builder().build()
     private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient.builder().build()
 
-    // 1 - jar
-    // 2 - feature
     private val buildSpecTemplate = "version: 0.2\n" +
             "\n" +
             "phases:\n" +
@@ -61,12 +59,17 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
     internal suspend fun scheduleAndWait(job: Job) {
         if (job.featurePaths.isEmpty())
+        {
+            println("No feature paths specified, will do nothing")
             return
+        }
+        println("Going to run ${job.featurePaths.count()} jobs")
 
         val sourceLocation = uploadToS3AndGetSourcePath(job, settings)
         ensureProjectExists(settings)
 
         runAndWaitForJobs(job, sourceLocation)
+        println("all jobs have finished")
     }
 
     private suspend fun runAndWaitForJobs(job: Job, sourceLocation: String) {
@@ -99,11 +102,13 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
                         STOPPED, TIMED_OUT, FAILED, FAULT -> {
                             job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
                             s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                            println("build ${originalJob.info.cucumberFeatureLocation} failed")
                         }
 
                         SUCCEEDED -> {
                             job.notifier.fireTestFinished(originalJob.junitDescription)
                             s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                            println("build ${originalJob.info.cucumberFeatureLocation} succeded")
                         }
 
                         IN_PROGRESS -> currentQueue.addLast(originalJob)
