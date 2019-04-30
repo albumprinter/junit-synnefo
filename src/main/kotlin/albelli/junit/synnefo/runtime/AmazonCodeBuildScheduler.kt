@@ -182,6 +182,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
         val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
         ZipHelper.unzip(response, targetDirectory)
+        deleteS3uploads(settings.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
 
