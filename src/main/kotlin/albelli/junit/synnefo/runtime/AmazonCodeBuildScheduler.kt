@@ -144,15 +144,25 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
             val availableSlots = settings.threads - currentQueue.size
 
-            val scheduledJobs =
-                    backlog
-                            .dequeueUpTo(availableSlots)
-                            .map {
-                                GlobalScope.async { startBuild(job, settings, sourceLocation, it) }
-                            }
-                            .map { it.await() }
+            val jobsToSpawn = backlog.dequeueUpTo(availableSlots)
 
-            currentQueue.addAll(scheduledJobs)
+            val rate = 45
+            while (jobsToSpawn.isNotEmpty())
+            {
+                val currentBatch = jobsToSpawn
+                        .dequeueUpTo(rate)
+
+                val scheduledJobs =
+                        currentBatch
+                                .map {
+                                    GlobalScope.async { startBuild(job, settings, sourceLocation, it) }
+                                }
+                                .map { it.await() }
+
+                currentQueue.addAll(scheduledJobs)
+                println("started ${currentBatch.count()} jobs")
+                delay(2000)
+            }
 
             delay(2000)
         }
