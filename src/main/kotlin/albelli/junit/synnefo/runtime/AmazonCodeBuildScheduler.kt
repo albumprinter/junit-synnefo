@@ -161,7 +161,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
                 currentQueue.addAll(scheduledJobs)
                 println("started ${currentBatch.count()} jobs")
-                delay(1000)
+                delay(2000)
             }
 
             delay(2000)
