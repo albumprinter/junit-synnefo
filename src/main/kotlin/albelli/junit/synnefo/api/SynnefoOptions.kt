@@ -21,6 +21,12 @@ annotation class SynnefoOptions(
          * @return target directory of Synnefo-report (this defaults to 'target' directory)
          */
         val reportTargetDir: String = "build/Synnefo",
+
+        /**
+         * @return special tags that would be added as "AND" to any other cucumber tags
+         */
+        val cucumberForcedTags: String = "",
+
         /**
          * @return the Cucumber options
          */

@@ -19,6 +19,7 @@ internal class SynnefoProperties(
         val bucketSourceFolder: String,
         val bucketOutputFolder: String,
         val outputFileName: String,
+        val cucumberForcedTags: String,
         val classPath: String,
         val featurePaths: List<URI>)
 {
@@ -35,6 +36,7 @@ internal class SynnefoProperties(
             getAnyVar("bucketSourceFolder", opt.bucketSourceFolder),
             getAnyVar("bucketOutputFolder", opt.bucketOutputFolder),
             getAnyVar("outputFileName", opt.outputFileName),
+            opt.cucumberForcedTags,
             "",
             listOf()
             )
@@ -52,6 +54,7 @@ internal class SynnefoProperties(
             opt.bucketSourceFolder,
             opt.bucketOutputFolder,
             opt.outputFileName,
+            opt.cucumberForcedTags,
             classPath,
             featurePaths
     )
