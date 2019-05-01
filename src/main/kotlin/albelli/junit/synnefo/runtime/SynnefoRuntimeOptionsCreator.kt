@@ -20,7 +20,7 @@ internal class SynnefoRuntimeOptionsCreator(synnefoProperties: SynnefoProperties
 
         val tags = envCucumberOptionOverride("tags", cucumberOptions.tags.toList()).map {
             if(cucumberForcedTags.isNullOrWhiteSpace()) it
-            else "($it) AND ($cucumberForcedTags)"
+            else "($it) and ($cucumberForcedTags)"
         }
         runtimeOptions.addAll(optionParser("--tags", tags))
 
