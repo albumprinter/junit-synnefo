@@ -146,7 +146,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
             val jobsToSpawn = backlog.dequeueUpTo(availableSlots)
 
-            val rate = 45
+            val rate = 25
             while (jobsToSpawn.isNotEmpty())
             {
                 val currentBatch = jobsToSpawn
@@ -161,7 +161,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
                 currentQueue.addAll(scheduledJobs)
                 println("started ${currentBatch.count()} jobs")
-                delay(2000)
+                delay(2500)
             }
 
             delay(2000)
