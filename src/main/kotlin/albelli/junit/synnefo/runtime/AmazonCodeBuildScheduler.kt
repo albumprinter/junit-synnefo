@@ -20,7 +20,7 @@ import java.net.URI
 import java.nio.file.Paths
 import java.util.*
 
-internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties, private val classLoader: ClassLoader) {
+internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
     // TODO
     // Should we have an option to use these clients with keys/secrets?
@@ -50,27 +50,26 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
     internal data class Job(
             val runnerInfos: List<SynnefoRunnerInfo>,
-            val jarPath: String,
-            val featurePaths: List<URI>,
-            val notifier: RunNotifier
+            val notifier: RunNotifier,
+            val settings: SynnefoProperties
     )
 
     internal data class ScheduledJob(val originalJob: Job, val buildId: String, val info: SynnefoRunnerInfo, val junitDescription: Description)
 
     internal suspend fun scheduleAndWait(job: Job) {
-        if (job.featurePaths.isEmpty())
+        if (job.settings.featurePaths.isEmpty())
         {
             println("No feature paths specified, will do nothing")
             return
         }
-        println("Going to run ${job.featurePaths.count()} jobs")
+        println("Going to run ${job.settings.featurePaths.count()} jobs")
 
-        val sourceLocation = uploadToS3AndGetSourcePath(job, settings)
-        ensureProjectExists(settings)
+        val sourceLocation = uploadToS3AndGetSourcePath(job, job.settings)
+        ensureProjectExists(job.settings)
 
         runAndWaitForJobs(job, sourceLocation)
         println("all jobs have finished")
-        s3.deleteS3uploads(settings.bucketName, sourceLocation)
+        s3.deleteS3uploads(job.settings.bucketName, sourceLocation)
     }
 
     private suspend fun S3AsyncClient.deleteS3uploads(bucketName: String, prefix: String) {
@@ -142,7 +141,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
                 }
             }
 
-            val availableSlots = settings.threads - currentQueue.size
+            val availableSlots = job.settings.threads - currentQueue.size
 
             val jobsToSpawn = backlog.dequeueUpTo(availableSlots)
 
@@ -155,7 +154,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
                 val scheduledJobs =
                         currentBatch
                                 .map {
-                                    GlobalScope.async { startBuild(job, settings, sourceLocation, it) }
+                                    GlobalScope.async { startBuild(job, job.settings, sourceLocation, it) }
                                 }
                                 .map { it.await() }
 
@@ -172,13 +171,13 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
     private suspend fun collectArtifact(result : ScheduledJob)
     {
-        val targetDirectory = settings.reportTargetDir
+        val targetDirectory = result.originalJob.settings.reportTargetDir
 
         val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
-        val keyPath = "${settings.bucketOutputFolder}$buildId/${settings.outputFileName}"
+        val keyPath = "${result.originalJob.settings.bucketOutputFolder}$buildId/${result.originalJob.settings.outputFileName}"
 
         val getObjectRequest = GetObjectRequest.builder()
-                .bucket(settings.bucketName)
+                .bucket(result.originalJob.settings.bucketName)
                 .key(keyPath)
                 .build()!!
 
@@ -191,7 +190,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
         val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
         ZipHelper.unzip(response, targetDirectory)
-        s3.deleteS3uploads(settings.bucketName, keyPath)
+        s3.deleteS3uploads(result.originalJob.settings.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
 
@@ -201,17 +200,17 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
         val targetDirectory = settings.bucketSourceFolder + UUID.randomUUID() + "/"
 
-        val jarPath = Paths.get(job.jarPath)
+        val jarPath = Paths.get(job.settings.classPath)
         val jarFileName = jarPath.fileName.toString()
 
-        for (feature in job.featurePaths) {
+        for (feature in job.settings.featurePaths) {
             if (!feature.scheme.equals("classpath", true))
             {
                 s3.multipartUploadFile(settings.bucketName, targetDirectory + feature.schemeSpecificPart, feature, 5)
             }
         }
 
-        s3.multipartUploadFile(settings.bucketName, targetDirectory + jarFileName, File(job.jarPath).toURI(), 5)
+        s3.multipartUploadFile(settings.bucketName, targetDirectory + jarFileName, File(job.settings.classPath).toURI(), 5)
 
         println("uploadToS3AndGetSourcePath done; path: $targetDirectory")
         return targetDirectory
@@ -280,7 +279,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
 
     private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo): ScheduledJob {
-        val buildSpec = generateBuildspecForFeature(Paths.get(job.jarPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions)
+        val buildSpec = generateBuildspecForFeature(Paths.get(job.settings.classPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions)
 
         val buildStartRequest = StartBuildRequest.builder()
                 .projectName(settings.projectName)
@@ -388,6 +387,4 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
         return String.format(this.buildSpecTemplate, sb.toString())
     }
-
-
 }
