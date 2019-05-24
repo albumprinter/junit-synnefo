@@ -8,6 +8,7 @@ import java.lang.annotation.RetentionPolicy
 
 @Retention(RetentionPolicy.RUNTIME)
 @java.lang.annotation.Repeatable(SynnefoOptions::class)
+@Repeatable
 annotation class SynnefoOptions(
 
         /**
