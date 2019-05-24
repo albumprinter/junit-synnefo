@@ -69,15 +69,26 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
     }
 
     private fun loadOptions(clazz: Class<*>): List<SynnefoProperties> {
+        val allAnnotations = ArrayList<SynnefoOptions>()
+
         val synnefoOptions = clazz.declaredAnnotations
                 .filter {
                     it is SynnefoOptions
                 }
                 .map { it as SynnefoOptions }
 
-        if(synnefoOptions.count() == 0)
+        allAnnotations.addAll(synnefoOptions)
+
+        val synnefoOptions2 = clazz.declaredAnnotations
+                .filter {
+                    it is SynnefoOptionsGroup
+                }
+                .flatMap { (it as SynnefoOptionsGroup).value.toList() }
+        allAnnotations.addAll(synnefoOptions2)
+
+        if(allAnnotations.count() == 0)
             throw SynnefoException("Runner class is not annotated with at least one @SynnefoOptions")
 
-        return synnefoOptions.map { SynnefoProperties(it) }
+        return allAnnotations.map { SynnefoProperties(it) }
     }
 }
