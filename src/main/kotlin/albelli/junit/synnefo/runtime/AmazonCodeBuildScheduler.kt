@@ -111,9 +111,11 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         val codeBuildRequestLimit = 100
         val s3Tasks = ArrayList<Deferred<Unit>>()
 
+        var periodicalUpdateTicker = 0
+
         while (backlog.size > 0 || currentQueue.size > 0) {
 
-            if(!currentQueue.isEmpty()) {
+            if (!currentQueue.isEmpty()) {
                 val lookupDict: Map<String, ScheduledJob> = currentQueue.associateBy({ it.buildId }, { it })
                 val dequeuedIds = currentQueue.dequeueUpTo(codeBuildRequestLimit).map { it.buildId }
 
@@ -152,8 +154,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             val jobsToSpawn = backlog.dequeueUpTo(availableSlots)
 
             val rate = 25
-            while (jobsToSpawn.isNotEmpty())
-            {
+            while (jobsToSpawn.isNotEmpty()) {
                 val currentBatch = jobsToSpawn
                         .dequeueUpTo(rate)
 
@@ -162,18 +163,25 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                                 .map {
 
                                     val settings = it.synnefoOptions
-                                    val location = sourceLocations[settings] ?: error("For whatever reason we don't have the source location for this setting")
+                                    val location = sourceLocations[settings]
+                                            ?: error("For whatever reason we don't have the source location for this setting")
 
                                     GlobalScope.async { startBuild(job, settings, location, it) }
                                 }
                                 .map { it.await() }
 
                 currentQueue.addAll(scheduledJobs)
-                println("started ${currentBatch.count()} jobs; current running total: ${currentQueue.size}; backlog: ${backlog.size}")
+                println("started ${currentBatch.count()} jobs")
                 delay(2500)
             }
 
             delay(2000)
+            periodicalUpdateTicker++
+            if (periodicalUpdateTicker > 15)
+            {
+                println("current running total: ${currentQueue.size}; backlog: ${backlog.size}")
+                periodicalUpdateTicker = 0
+            }
         }
 
         s3Tasks.awaitAll()
