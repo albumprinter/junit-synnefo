@@ -6,7 +6,10 @@ import cucumber.api.CucumberOptions
 import java.lang.annotation.Retention
 import java.lang.annotation.RetentionPolicy
 
+@java.lang.annotation.Repeatable(SynnefoOptionsGroup::class)
 @Retention(RetentionPolicy.RUNTIME)
+@Target(AnnotationTarget.CLASS)
+@Repeatable
 annotation class SynnefoOptions(
 
         /**
@@ -69,3 +72,7 @@ annotation class SynnefoOptions(
          */
         val outputFileName: String = "runResults.zip"
 )
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target(AnnotationTarget.CLASS)
+annotation class SynnefoOptionsGroup(vararg val value: SynnefoOptions)

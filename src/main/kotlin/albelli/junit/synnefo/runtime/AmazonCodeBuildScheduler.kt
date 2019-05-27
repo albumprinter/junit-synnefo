@@ -20,7 +20,7 @@ import java.net.URI
 import java.nio.file.Paths
 import java.util.*
 
-internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties, private val classLoader: ClassLoader) {
+internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
     // TODO
     // Should we have an option to use these clients with keys/secrets?
@@ -49,28 +49,38 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
             "  discard-paths: yes"
 
     internal data class Job(
-            val runnerInfos: List<SynnefoRunnerInfo>,
-            val jarPath: String,
-            val featurePaths: List<URI>,
-            val notifier: RunNotifier
+        val runnerInfos: List<SynnefoRunnerInfo>,
+        val notifier: RunNotifier
     )
 
     internal data class ScheduledJob(val originalJob: Job, val buildId: String, val info: SynnefoRunnerInfo, val junitDescription: Description)
 
     internal suspend fun scheduleAndWait(job: Job) {
-        if (job.featurePaths.isEmpty())
+        val uniqueProps = job.runnerInfos.groupBy { it.synnefoOptions }.map { it.key }
+
+        val featuresCount = uniqueProps.flatMap { it.featurePaths }.count()
+        if (featuresCount == 0)
         {
             println("No feature paths specified, will do nothing")
             return
         }
-        println("Going to run ${job.featurePaths.count()} jobs")
+        println("Going to run $featuresCount jobs")
 
-        val sourceLocation = uploadToS3AndGetSourcePath(job, settings)
-        ensureProjectExists(settings)
+        val locationMap = uniqueProps.map {
+            val sourceLocation = uploadToS3AndGetSourcePath(it)
+            ensureProjectExists(it)
+            Pair(it, sourceLocation)
+        }.associateBy ( { it.first }, { it.second } )
 
-        runAndWaitForJobs(job, sourceLocation)
+        // Use the sum of the threads as the total amount of threads available.
+        // The downside of this approach is that if an override is used, the same value would be plugged in into both annotations
+        val threads = uniqueProps.map { it.threads }.sum()
+        runAndWaitForJobs(job, threads, locationMap)
         println("all jobs have finished")
-        s3.deleteS3uploads(settings.bucketName, sourceLocation)
+
+        for(prop in uniqueProps) {
+            s3.deleteS3uploads(prop.bucketName, locationMap[prop] ?: error("For whatever reason we don't have the source location for this setting"))
+        }
     }
 
     private suspend fun S3AsyncClient.deleteS3uploads(bucketName: String, prefix: String) {
@@ -85,7 +95,6 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
         val listResponse = s3.listObjects(listObjectsRequest).await()
 
-
         val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
 
         val deleteObjectsRequest = DeleteObjectsRequest.builder()
@@ -96,19 +105,17 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
         this.deleteObjects(deleteObjectsRequest).await()
     }
 
-    private suspend fun runAndWaitForJobs(job: Job, sourceLocation: String) {
+    private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>) {
         val currentQueue = LinkedList<ScheduledJob>()
-
         val backlog = job.runnerInfos.toMutableList()
-
         val codeBuildRequestLimit = 100
-
         val s3Tasks = ArrayList<Deferred<Unit>>()
+
+        var periodicalUpdateTicker = 0
 
         while (backlog.size > 0 || currentQueue.size > 0) {
 
-            if(!currentQueue.isEmpty()) {
-
+            if (!currentQueue.isEmpty()) {
                 val lookupDict: Map<String, ScheduledJob> = currentQueue.associateBy({ it.buildId }, { it })
                 val dequeuedIds = currentQueue.dequeueUpTo(codeBuildRequestLimit).map { it.buildId }
 
@@ -132,7 +139,7 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
                         SUCCEEDED -> {
                             job.notifier.fireTestFinished(originalJob.junitDescription)
                             s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
-                            println("build ${originalJob.info.cucumberFeatureLocation} succeded")
+                            println("build ${originalJob.info.cucumberFeatureLocation} succeeded")
                         }
 
                         IN_PROGRESS -> currentQueue.addLast(originalJob)
@@ -142,20 +149,24 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
                 }
             }
 
-            val availableSlots = settings.threads - currentQueue.size
+            val availableSlots = threads - currentQueue.size
 
             val jobsToSpawn = backlog.dequeueUpTo(availableSlots)
 
             val rate = 25
-            while (jobsToSpawn.isNotEmpty())
-            {
+            while (jobsToSpawn.isNotEmpty()) {
                 val currentBatch = jobsToSpawn
                         .dequeueUpTo(rate)
 
                 val scheduledJobs =
                         currentBatch
                                 .map {
-                                    GlobalScope.async { startBuild(job, settings, sourceLocation, it) }
+
+                                    val settings = it.synnefoOptions
+                                    val location = sourceLocations[settings]
+                                            ?: error("For whatever reason we don't have the source location for this setting")
+
+                                    GlobalScope.async { startBuild(job, settings, location, it) }
                                 }
                                 .map { it.await() }
 
@@ -165,6 +176,12 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
             }
 
             delay(2000)
+            periodicalUpdateTicker++
+            if (periodicalUpdateTicker > 15)
+            {
+                println("current running total: ${currentQueue.size}; backlog: ${backlog.size}")
+                periodicalUpdateTicker = 0
+            }
         }
 
         s3Tasks.awaitAll()
@@ -172,13 +189,13 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
     private suspend fun collectArtifact(result : ScheduledJob)
     {
-        val targetDirectory = settings.reportTargetDir
+        val targetDirectory = result.info.synnefoOptions.reportTargetDir
 
         val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
-        val keyPath = "${settings.bucketOutputFolder}$buildId/${settings.outputFileName}"
+        val keyPath = "${result.info.synnefoOptions.bucketOutputFolder}$buildId/${result.info.synnefoOptions.outputFileName}"
 
         val getObjectRequest = GetObjectRequest.builder()
-                .bucket(settings.bucketName)
+                .bucket(result.info.synnefoOptions.bucketName)
                 .key(keyPath)
                 .build()!!
 
@@ -191,27 +208,27 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
         val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
         ZipHelper.unzip(response, targetDirectory)
-        s3.deleteS3uploads(settings.bucketName, keyPath)
+        s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
 
-    private suspend fun uploadToS3AndGetSourcePath(job: Job, settings: SynnefoProperties): String {
+    private suspend fun uploadToS3AndGetSourcePath(settings: SynnefoProperties): String {
 
         println("uploadToS3AndGetSourcePath")
 
         val targetDirectory = settings.bucketSourceFolder + UUID.randomUUID() + "/"
 
-        val jarPath = Paths.get(job.jarPath)
+        val jarPath = Paths.get(settings.classPath)
         val jarFileName = jarPath.fileName.toString()
 
-        for (feature in job.featurePaths) {
+        for (feature in settings.featurePaths) {
             if (!feature.scheme.equals("classpath", true))
             {
                 s3.multipartUploadFile(settings.bucketName, targetDirectory + feature.schemeSpecificPart, feature, 5)
             }
         }
 
-        s3.multipartUploadFile(settings.bucketName, targetDirectory + jarFileName, File(job.jarPath).toURI(), 5)
+        s3.multipartUploadFile(settings.bucketName, targetDirectory + jarFileName, File(settings.classPath).toURI(), 5)
 
         println("uploadToS3AndGetSourcePath done; path: $targetDirectory")
         return targetDirectory
@@ -278,9 +295,8 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
         codeBuild.createProject(createRequest).await()
     }
 
-
     private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo): ScheduledJob {
-        val buildSpec = generateBuildspecForFeature(Paths.get(job.jarPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions)
+        val buildSpec = generateBuildspecForFeature(Paths.get(settings.classPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions)
 
         val buildStartRequest = StartBuildRequest.builder()
                 .projectName(settings.projectName)
@@ -388,6 +404,4 @@ internal class AmazonCodeBuildScheduler(private val settings: SynnefoProperties,
 
         return String.format(this.buildSpecTemplate, sb.toString())
     }
-
-
 }
