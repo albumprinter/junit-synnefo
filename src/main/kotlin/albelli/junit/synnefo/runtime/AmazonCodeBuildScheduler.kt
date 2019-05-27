@@ -169,7 +169,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                                 .map { it.await() }
 
                 currentQueue.addAll(scheduledJobs)
-                println("started ${currentBatch.count()} jobs")
+                println("started ${currentBatch.count()} jobs; current running total: ${currentQueue.size}; backlog: ${backlog.size}")
                 delay(2500)
             }
 
