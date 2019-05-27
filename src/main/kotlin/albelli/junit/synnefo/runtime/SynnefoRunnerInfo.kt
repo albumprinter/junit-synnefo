@@ -4,7 +4,7 @@ import albelli.junit.synnefo.api.SynnefoRunLevel
 import cucumber.runtime.model.CucumberFeature
 
 internal class SynnefoRunnerInfo(
-        synnefoOptions: SynnefoProperties,
+        val synnefoOptions: SynnefoProperties,
         private val cucumberFeature: CucumberFeature,
         private val lineId: Int?) {
     private val synnefoRuntimeOptions: SynnefoRuntimeOptionsCreator = SynnefoRuntimeOptionsCreator(synnefoOptions)

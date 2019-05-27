@@ -49,27 +49,38 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             "  discard-paths: yes"
 
     internal data class Job(
-            val runnerInfos: List<SynnefoRunnerInfo>,
-            val notifier: RunNotifier,
-            val settings: SynnefoProperties
+        val runnerInfos: List<SynnefoRunnerInfo>,
+        val notifier: RunNotifier
     )
 
     internal data class ScheduledJob(val originalJob: Job, val buildId: String, val info: SynnefoRunnerInfo, val junitDescription: Description)
 
     internal suspend fun scheduleAndWait(job: Job) {
-        if (job.settings.featurePaths.isEmpty())
+        val uniqueProps = job.runnerInfos.groupBy { it.synnefoOptions }.map { it.key }
+
+        val featuresCount = uniqueProps.flatMap { it.featurePaths }.count()
+        if (featuresCount == 0)
         {
             println("No feature paths specified, will do nothing")
             return
         }
-        println("Going to run ${job.settings.featurePaths.count()} jobs")
+        println("Going to run $featuresCount jobs")
 
-        val sourceLocation = uploadToS3AndGetSourcePath(job, job.settings)
-        ensureProjectExists(job.settings)
+        val locationMap = uniqueProps.map {
+            val sourceLocation = uploadToS3AndGetSourcePath(it)
+            ensureProjectExists(it)
+            Pair(it, sourceLocation)
+        }.associateBy ( { it.first }, { it.second } )
 
-        runAndWaitForJobs(job, sourceLocation)
+        // Use the sum of the threads as the total amount of threads available.
+        // The downside of this approach is that if an override is used, the same value would be plugged in into both annotations
+        val threads = uniqueProps.map { it.threads }.sum()
+        runAndWaitForJobs(job, threads, locationMap)
         println("all jobs have finished")
-        s3.deleteS3uploads(job.settings.bucketName, sourceLocation)
+
+        for(prop in uniqueProps) {
+            s3.deleteS3uploads(prop.bucketName, locationMap[prop] ?: error("For whatever reason we don't have the source location for this setting"))
+        }
     }
 
     private suspend fun S3AsyncClient.deleteS3uploads(bucketName: String, prefix: String) {
@@ -84,7 +95,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
         val listResponse = s3.listObjects(listObjectsRequest).await()
 
-
         val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
 
         val deleteObjectsRequest = DeleteObjectsRequest.builder()
@@ -95,19 +105,15 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         this.deleteObjects(deleteObjectsRequest).await()
     }
 
-    private suspend fun runAndWaitForJobs(job: Job, sourceLocation: String) {
+    private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>) {
         val currentQueue = LinkedList<ScheduledJob>()
-
         val backlog = job.runnerInfos.toMutableList()
-
         val codeBuildRequestLimit = 100
-
         val s3Tasks = ArrayList<Deferred<Unit>>()
 
         while (backlog.size > 0 || currentQueue.size > 0) {
 
             if(!currentQueue.isEmpty()) {
-
                 val lookupDict: Map<String, ScheduledJob> = currentQueue.associateBy({ it.buildId }, { it })
                 val dequeuedIds = currentQueue.dequeueUpTo(codeBuildRequestLimit).map { it.buildId }
 
@@ -131,7 +137,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                         SUCCEEDED -> {
                             job.notifier.fireTestFinished(originalJob.junitDescription)
                             s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
-                            println("build ${originalJob.info.cucumberFeatureLocation} succeded")
+                            println("build ${originalJob.info.cucumberFeatureLocation} succeeded")
                         }
 
                         IN_PROGRESS -> currentQueue.addLast(originalJob)
@@ -141,7 +147,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 }
             }
 
-            val availableSlots = job.settings.threads - currentQueue.size
+            val availableSlots = threads - currentQueue.size
 
             val jobsToSpawn = backlog.dequeueUpTo(availableSlots)
 
@@ -154,7 +160,11 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 val scheduledJobs =
                         currentBatch
                                 .map {
-                                    GlobalScope.async { startBuild(job, job.settings, sourceLocation, it) }
+
+                                    val settings = it.synnefoOptions
+                                    val location = sourceLocations[settings] ?: error("For whatever reason we don't have the source location for this setting")
+
+                                    GlobalScope.async { startBuild(job, settings, location, it) }
                                 }
                                 .map { it.await() }
 
@@ -171,13 +181,13 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
     private suspend fun collectArtifact(result : ScheduledJob)
     {
-        val targetDirectory = result.originalJob.settings.reportTargetDir
+        val targetDirectory = result.info.synnefoOptions.reportTargetDir
 
         val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
-        val keyPath = "${result.originalJob.settings.bucketOutputFolder}$buildId/${result.originalJob.settings.outputFileName}"
+        val keyPath = "${result.info.synnefoOptions.bucketOutputFolder}$buildId/${result.info.synnefoOptions.outputFileName}"
 
         val getObjectRequest = GetObjectRequest.builder()
-                .bucket(result.originalJob.settings.bucketName)
+                .bucket(result.info.synnefoOptions.bucketName)
                 .key(keyPath)
                 .build()!!
 
@@ -190,27 +200,27 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
         ZipHelper.unzip(response, targetDirectory)
-        s3.deleteS3uploads(result.originalJob.settings.bucketName, keyPath)
+        s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
 
-    private suspend fun uploadToS3AndGetSourcePath(job: Job, settings: SynnefoProperties): String {
+    private suspend fun uploadToS3AndGetSourcePath(settings: SynnefoProperties): String {
 
         println("uploadToS3AndGetSourcePath")
 
         val targetDirectory = settings.bucketSourceFolder + UUID.randomUUID() + "/"
 
-        val jarPath = Paths.get(job.settings.classPath)
+        val jarPath = Paths.get(settings.classPath)
         val jarFileName = jarPath.fileName.toString()
 
-        for (feature in job.settings.featurePaths) {
+        for (feature in settings.featurePaths) {
             if (!feature.scheme.equals("classpath", true))
             {
                 s3.multipartUploadFile(settings.bucketName, targetDirectory + feature.schemeSpecificPart, feature, 5)
             }
         }
 
-        s3.multipartUploadFile(settings.bucketName, targetDirectory + jarFileName, File(job.settings.classPath).toURI(), 5)
+        s3.multipartUploadFile(settings.bucketName, targetDirectory + jarFileName, File(settings.classPath).toURI(), 5)
 
         println("uploadToS3AndGetSourcePath done; path: $targetDirectory")
         return targetDirectory
@@ -277,9 +287,8 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         codeBuild.createProject(createRequest).await()
     }
 
-
     private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo): ScheduledJob {
-        val buildSpec = generateBuildspecForFeature(Paths.get(job.settings.classPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions)
+        val buildSpec = generateBuildspecForFeature(Paths.get(settings.classPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions)
 
         val buildStartRequest = StartBuildRequest.builder()
                 .projectName(settings.projectName)
