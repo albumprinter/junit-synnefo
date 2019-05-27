@@ -16,7 +16,7 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
     private val callbacks: SynnefoCallbacks
     private val classLoader: ClassLoader = clazz.classLoader!!
 
-    private val runnersPropertiesPairs: ArrayList<Pair<SynnefoProperties, List<SynnefoRunnerInfo>>> = ArrayList()
+    private val runnerInfoList: ArrayList<SynnefoRunnerInfo> = ArrayList()
 
     init {
 
@@ -28,7 +28,6 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
         {
             val synnefoLoader = SynnefoLoader(opt, classLoader)
             val cucumberFeatures = synnefoLoader.getCucumberFeatures()
-            val runnerInfoList : MutableList<SynnefoRunnerInfo> = ArrayList()
             val synnefoProperties = SynnefoProperties(opt , classPath, cucumberFeatures.map { f -> f.uri })
 
             if (synnefoProperties.runLevel == SynnefoRunLevel.FEATURE) {
@@ -40,9 +39,6 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
                     runnerInfoList.add(SynnefoRunnerInfo(synnefoProperties, scenario, line))
                 }
             }
-
-            val pair = Pair(synnefoProperties, runnerInfoList)
-            runnersPropertiesPairs.add(pair)
         }
     }
 
@@ -50,7 +46,7 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
         val synnefoRunner = SynnefoRunner(classLoader, notifier)
         try {
             callbacks.beforeAll()
-            synnefoRunner.run(runnersPropertiesPairs)
+            synnefoRunner.run(runnerInfoList)
         } finally {
             callbacks.afterAll()
         }
