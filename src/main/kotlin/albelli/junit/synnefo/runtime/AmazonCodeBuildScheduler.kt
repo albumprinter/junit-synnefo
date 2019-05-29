@@ -409,18 +409,17 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     private fun getSystemProperties(): List<String> {
 
         val transferrableProperties = System.getProperty("SynnefoTransferrableProperties")
-
         if(transferrableProperties.isNullOrWhiteSpace())
             return arrayListOf()
 
-        val propetiesList = transferrableProperties.split(':')
+        val propertiesList = transferrableProperties.split(';')
 
         return System.getProperties()
             .map {
                 Pair(it.key.toString(), it.value.toString().trim())
             }
             .filter { pair ->
-                val isNotIgnored = propetiesList.any { pair.first.startsWith(it, ignoreCase = true) }
+                val isNotIgnored = propertiesList.any { pair.first.startsWith(it, ignoreCase = true) }
                 val isNotEmpty = !pair.second.isNullOrWhiteSpace()
                 isNotIgnored && isNotEmpty
             }
