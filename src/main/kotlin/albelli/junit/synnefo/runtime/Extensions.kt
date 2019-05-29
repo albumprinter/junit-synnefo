@@ -15,9 +15,9 @@ internal fun <E> MutableList<E>.dequeueUpTo(limit: Int): MutableList<E> {
 
 internal fun StringBuilder.appendWithEscaping(s: String) {
     if (s.contains(' ') || s.contains(':'))
-        this.append("\"$s\" ").trim()
+        this.append("\"$s\" ")
     else
-        this.append("$s ").trim()
+        this.append("$s ")
 }
 
 internal fun String.isNullOrWhiteSpace(): Boolean {

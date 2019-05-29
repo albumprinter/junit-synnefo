@@ -411,11 +411,12 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
         return System.getProperties()
             .map {
-                Pair(it.key.toString(), it.value.toString())
+                Pair(it.key.toString(), it.value.toString().trim())
             }
             .filter { pair ->
-                val isIgnored = ignoredPrefixes.any { pair.first.startsWith(it, ignoreCase = true) }
-                isIgnored || pair.second.isNullOrWhiteSpace()
+                val isNotIgnored = !ignoredPrefixes.any { pair.first.startsWith(it, ignoreCase = true) }
+                val isNotEmpty = !pair.second.isNullOrWhiteSpace()
+                isNotIgnored && isNotEmpty
             }
             .map {
                     String.format("-D%s=%s", it.first, it.second)
