@@ -393,6 +393,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         sb.appendWithEscaping("java")
         sb.appendWithEscaping("-cp")
         sb.appendWithEscaping("./../$jar")
+        getSystemProperties().forEach { sb.appendWithEscaping(it) }
         sb.appendWithEscaping("cucumber.api.cli.Main")
         if(feature.startsWith("classpath")) {
             sb.appendWithEscaping(feature)
@@ -403,5 +404,27 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         runtimeOptions.forEach { sb.appendWithEscaping(it) }
 
         return String.format(this.buildSpecTemplate, sb.toString())
+    }
+
+    private fun getSystemProperties(): List<String> {
+
+        val transferrableProperties = System.getProperty("SynnefoTransferrableProperties")
+        if(transferrableProperties.isNullOrWhiteSpace())
+            return arrayListOf()
+
+        val propertiesList = transferrableProperties.split(';')
+
+        return System.getProperties()
+            .map {
+                Pair(it.key.toString(), it.value.toString().trim())
+            }
+            .filter { pair ->
+                val isNotIgnored = propertiesList.any { pair.first.startsWith(it, ignoreCase = true) }
+                val isNotEmpty = !pair.second.isNullOrWhiteSpace()
+                isNotIgnored && isNotEmpty
+            }
+            .map {
+                    String.format("-D%s=%s", it.first, it.second)
+            }
     }
 }
