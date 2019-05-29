@@ -391,9 +391,9 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>): String {
         val sb = StringBuilder()
         sb.appendWithEscaping("java")
-        getSystemProperties().forEach { sb.appendWithEscaping(it) }
         sb.appendWithEscaping("-cp")
         sb.appendWithEscaping("./../$jar")
+        getSystemProperties().forEach { sb.appendWithEscaping(it) }
         sb.appendWithEscaping("cucumber.api.cli.Main")
         if(feature.startsWith("classpath")) {
             sb.appendWithEscaping(feature)
@@ -407,14 +407,20 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private fun getSystemProperties(): List<String> {
-        val ignoredPrefixes = arrayOf("cucumber", "Synnefo", "java", "sun")
+
+        val transferrableProperties = System.getProperty("SynnefoTransferrableProperties")
+
+        if(transferrableProperties.isNullOrWhiteSpace())
+            return arrayListOf()
+
+        val propetiesList = transferrableProperties.split(':')
 
         return System.getProperties()
             .map {
                 Pair(it.key.toString(), it.value.toString().trim())
             }
             .filter { pair ->
-                val isNotIgnored = !ignoredPrefixes.any { pair.first.startsWith(it, ignoreCase = true) }
+                val isNotIgnored = propetiesList.any { pair.first.startsWith(it, ignoreCase = true) }
                 val isNotEmpty = !pair.second.isNullOrWhiteSpace()
                 isNotIgnored && isNotEmpty
             }
