@@ -391,6 +391,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>): String {
         val sb = StringBuilder()
         sb.appendWithEscaping("java")
+        getSystemProperties().forEach { sb.appendWithEscaping(it) }
         sb.appendWithEscaping("-cp")
         sb.appendWithEscaping("./../$jar")
         sb.appendWithEscaping("cucumber.api.cli.Main")
@@ -401,7 +402,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             sb.appendWithEscaping("./../$feature")
         }
         runtimeOptions.forEach { sb.appendWithEscaping(it) }
-        getSystemProperties().forEach { sb.appendWithEscaping(it) }
 
         return String.format(this.buildSpecTemplate, sb.toString())
     }
