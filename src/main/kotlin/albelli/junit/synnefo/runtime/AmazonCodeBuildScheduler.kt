@@ -407,12 +407,18 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private fun getSystemProperties(): List<String> {
+        val ignoredPrefixes = arrayOf("cucumber", "Synnefo", "java", "sun")
+
         return System.getProperties()
             .map {
-                String.format("-D%s=%s", it.key, it.value)
-            }.filter {
-                    (!it.startsWith("-Dcucumber")
-                    || !it.startsWith("-DSynnefo"))
+                Pair(it.key.toString(), it.value.toString())
+            }
+            .filter { pair ->
+                val isIgnored = ignoredPrefixes.any { pair.first.startsWith(it, ignoreCase = true) }
+                isIgnored || pair.second.isNullOrWhiteSpace()
+            }
+            .map {
+                    String.format("-D%s=%s", it.first, it.second)
             }
     }
 }
