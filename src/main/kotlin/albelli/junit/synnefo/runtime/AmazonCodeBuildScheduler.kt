@@ -401,7 +401,18 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             sb.appendWithEscaping("./../$feature")
         }
         runtimeOptions.forEach { sb.appendWithEscaping(it) }
+        getSystemProperties().forEach { sb.appendWithEscaping(it) }
 
         return String.format(this.buildSpecTemplate, sb.toString())
+    }
+
+    private fun getSystemProperties(): List<String> {
+        return System.getProperties()
+            .map {
+                String.format("-D%s=%s", it.key, it.value)
+            }.filter {
+                    (!it.startsWith("-Dcucumber")
+                    || !it.startsWith("-DSynnefo"))
+            }
     }
 }
