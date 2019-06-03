@@ -48,6 +48,29 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             "    - 'result-artifacts/**/*'\n" +
             "  discard-paths: yes"
 
+    private val buildSpecTemplateStandard2_0 = "version: 0.2\n" +
+            "\n" +
+            "phases:\n" +
+            "  pre_build:\n" +
+            "    commands:\n" +
+            "      - echo Build started on `date`\n" +
+            "  install:\n" +
+            "    runtime-versions:\n" +
+            "      java: openjdk8\n" +
+            "  build:\n" +
+            "    commands:\n" +
+            "      - mkdir result-artifacts\n" +
+            "      - cd result-artifacts\n" +
+            "      - %s\n" +
+            "      - ls\n" +
+            "  post_build:\n" +
+            "    commands:\n" +
+            "      - echo Build completed on `date`\n" +
+            "artifacts:\n" +
+            "  files:\n" +
+            "    - 'result-artifacts/**/*'\n" +
+            "  discard-paths: yes"
+
     internal data class Job(
         val runnerInfos: List<SynnefoRunnerInfo>,
         val notifier: RunNotifier
@@ -296,7 +319,9 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo): ScheduledJob {
-        val buildSpec = generateBuildspecForFeature(Paths.get(settings.classPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions)
+        val useStandardImage = settings.image.startsWith("aws/codebuild/standard:2.0")
+
+        val buildSpec = generateBuildspecForFeature(Paths.get(settings.classPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions, useStandardImage)
 
         val buildStartRequest = StartBuildRequest.builder()
                 .projectName(settings.projectName)
@@ -388,7 +413,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         s3clientExt.completeMultipartUpload(completeMultipartUploadRequest).await()
     }
 
-    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>): String {
+    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>, useStandardImage: Boolean): String {
         val sb = StringBuilder()
         sb.appendWithEscaping("java")
         sb.appendWithEscaping("-cp")
@@ -403,7 +428,8 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         }
         runtimeOptions.forEach { sb.appendWithEscaping(it) }
 
-        return String.format(this.buildSpecTemplate, sb.toString())
+        val image = if (useStandardImage) { this.buildSpecTemplateStandard2_0 } else {this.buildSpecTemplate }
+        return String.format(image, sb.toString())
     }
 
     private fun getSystemProperties(): List<String> {
