@@ -20,7 +20,10 @@ internal fun StringBuilder.appendWithEscaping(s: String) {
         this.append("$s ")
 }
 
-internal fun String.isNullOrWhiteSpace(): Boolean {
+internal fun String?.isNullOrWhiteSpace(): Boolean {
+    if(this == null)
+        return true
+
     return this.trim { it <= ' ' }.isEmpty()
 }
 
