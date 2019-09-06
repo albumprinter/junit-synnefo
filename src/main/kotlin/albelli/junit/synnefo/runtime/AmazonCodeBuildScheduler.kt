@@ -131,6 +131,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>) {
         val currentQueue = LinkedList<ScheduledJob>()
         val backlog = job.runnerInfos.toMutableList()
+        backlog.shuffle()
         val codeBuildRequestLimit = 100
         val s3Tasks = ArrayList<Deferred<Unit>>()
 
