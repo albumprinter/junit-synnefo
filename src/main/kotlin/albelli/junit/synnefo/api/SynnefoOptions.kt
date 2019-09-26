@@ -70,9 +70,12 @@ annotation class SynnefoOptions(
         /**
          * @return the name of the zipped artifacts file
          */
-        val outputFileName: String = "runResults.zip"
+        val outputFileName: String = "runResults.zip",
+        /**
+         * @return value indicating whether we should shuffle the backlog of tasks before scheduling them in CodeBuild
+         */
+        val shuffleBacklogBeforeExecution: Boolean
 )
-
 @Retention(RetentionPolicy.RUNTIME)
 @Target(AnnotationTarget.CLASS)
 annotation class SynnefoOptionsGroup(vararg val value: SynnefoOptions)

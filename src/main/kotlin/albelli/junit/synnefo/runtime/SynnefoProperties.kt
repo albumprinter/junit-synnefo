@@ -4,6 +4,7 @@ import albelli.junit.synnefo.api.SynnefoOptions
 import albelli.junit.synnefo.api.SynnefoRunLevel
 import albelli.junit.synnefo.runtime.exceptions.SynnefoException
 import cucumber.api.CucumberOptions
+import software.amazon.awssdk.core.interceptor.Context
 import java.net.URI
 
 internal class SynnefoProperties(
@@ -21,7 +22,8 @@ internal class SynnefoProperties(
         val outputFileName: String,
         val cucumberForcedTags: String,
         val classPath: String,
-        val featurePaths: List<URI>)
+        val featurePaths: List<URI>,
+        val shuffleBacklogBeforeExecution: Boolean)
 {
     constructor(opt: SynnefoOptions): this(
             getAnyVar("threads", opt.threads),
@@ -38,7 +40,8 @@ internal class SynnefoProperties(
             getAnyVar("outputFileName", opt.outputFileName),
             opt.cucumberForcedTags,
             "",
-            listOf()
+            listOf(),
+            getAnyVar("shuffleBacklogBeforeExecution", opt.shuffleBacklogBeforeExecution)
             )
 
     constructor(opt: SynnefoProperties, classPath: String, featurePaths: List<URI>): this(
@@ -56,7 +59,8 @@ internal class SynnefoProperties(
             opt.outputFileName,
             opt.cucumberForcedTags,
             classPath,
-            featurePaths
+            featurePaths,
+            opt.shuffleBacklogBeforeExecution
     )
 
     companion object {
@@ -89,6 +93,12 @@ internal class SynnefoProperties(
         {
             val anyVar = getAnyVar(varName)
             return anyVar ?: default
+        }
+
+        private fun getAnyVar(varName: String, default: Boolean) : Boolean
+        {
+            val anyVar = getAnyVar(varName)
+            return anyVar?.toBoolean() ?: default
         }
 
         @Throws(SynnefoException::class)
