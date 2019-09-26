@@ -74,7 +74,7 @@ annotation class SynnefoOptions(
         /**
          * @return value indicating whether we should shuffle the backlog of tasks before scheduling them in CodeBuild
          */
-        val shuffleBacklogBeforeExecution: Boolean
+        val shuffleBacklogBeforeExecution: Boolean = false
 )
 @Retention(RetentionPolicy.RUNTIME)
 @Target(AnnotationTarget.CLASS)
