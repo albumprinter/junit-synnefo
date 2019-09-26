@@ -56,7 +56,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             "      - echo Build started on `date`\n" +
             "  install:\n" +
             "    runtime-versions:\n" +
-            "      java: openjdk8\n" +
+            "      java: openjdk11\n" +
             "  build:\n" +
             "    commands:\n" +
             "      - mkdir result-artifacts\n" +
