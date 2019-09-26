@@ -4,10 +4,11 @@ import albelli.junit.synnefo.api.SynnefoOptions
 import albelli.junit.synnefo.api.SynnefoRunLevel
 import albelli.junit.synnefo.runtime.exceptions.SynnefoException
 import cucumber.api.CucumberOptions
+import software.amazon.awssdk.core.interceptor.Context
 import java.net.URI
 
 internal class SynnefoProperties(
-        val threads: Int ,
+        val threads: Int,
         val runLevel: SynnefoRunLevel,
         val reportTargetDir: String,
         val cucumberOptions: CucumberOptions,
@@ -20,6 +21,7 @@ internal class SynnefoProperties(
         val bucketOutputFolder: String,
         val outputFileName: String,
         val cucumberForcedTags: String,
+        val shuffleBacklogBeforeExecution: Boolean,
         val classPath: String,
         val featurePaths: List<URI>)
 {
@@ -37,9 +39,10 @@ internal class SynnefoProperties(
             getAnyVar("bucketOutputFolder", opt.bucketOutputFolder),
             getAnyVar("outputFileName", opt.outputFileName),
             opt.cucumberForcedTags,
+            getAnyVar("shuffleBacklogBeforeExecution", opt.shuffleBacklogBeforeExecution),
             "",
             listOf()
-            )
+    )
 
     constructor(opt: SynnefoProperties, classPath: String, featurePaths: List<URI>): this(
             opt.threads,
@@ -55,6 +58,7 @@ internal class SynnefoProperties(
             opt.bucketOutputFolder,
             opt.outputFileName,
             opt.cucumberForcedTags,
+            opt.shuffleBacklogBeforeExecution,
             classPath,
             featurePaths
     )
@@ -89,6 +93,12 @@ internal class SynnefoProperties(
         {
             val anyVar = getAnyVar(varName)
             return anyVar ?: default
+        }
+
+        private fun getAnyVar(varName: String, default: Boolean) : Boolean
+        {
+            val anyVar = getAnyVar(varName)
+            return anyVar?.toBoolean() ?: default
         }
 
         @Throws(SynnefoException::class)

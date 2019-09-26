@@ -39,6 +39,9 @@ constructor(clazz: Class<*>) : ParentRunner<FeatureRunner>(clazz) {
                     runnerInfoList.add(SynnefoRunnerInfo(synnefoProperties, scenario, line))
                 }
             }
+
+            if (opt.shuffleBacklogBeforeExecution)
+                runnerInfoList.shuffle()
         }
     }
 
