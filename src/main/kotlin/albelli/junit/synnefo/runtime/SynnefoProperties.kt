@@ -8,7 +8,7 @@ import software.amazon.awssdk.core.interceptor.Context
 import java.net.URI
 
 internal class SynnefoProperties(
-        val threads: Int ,
+        val threads: Int,
         val runLevel: SynnefoRunLevel,
         val reportTargetDir: String,
         val cucumberOptions: CucumberOptions,
@@ -21,9 +21,9 @@ internal class SynnefoProperties(
         val bucketOutputFolder: String,
         val outputFileName: String,
         val cucumberForcedTags: String,
+        val shuffleBacklogBeforeExecution: Boolean,
         val classPath: String,
-        val featurePaths: List<URI>,
-        val shuffleBacklogBeforeExecution: Boolean)
+        val featurePaths: List<URI>)
 {
     constructor(opt: SynnefoOptions): this(
             getAnyVar("threads", opt.threads),
@@ -39,10 +39,10 @@ internal class SynnefoProperties(
             getAnyVar("bucketOutputFolder", opt.bucketOutputFolder),
             getAnyVar("outputFileName", opt.outputFileName),
             opt.cucumberForcedTags,
+            getAnyVar("shuffleBacklogBeforeExecution", opt.shuffleBacklogBeforeExecution),
             "",
-            listOf(),
-            getAnyVar("shuffleBacklogBeforeExecution", opt.shuffleBacklogBeforeExecution)
-            )
+            listOf()
+    )
 
     constructor(opt: SynnefoProperties, classPath: String, featurePaths: List<URI>): this(
             opt.threads,
@@ -58,9 +58,9 @@ internal class SynnefoProperties(
             opt.bucketOutputFolder,
             opt.outputFileName,
             opt.cucumberForcedTags,
+            opt.shuffleBacklogBeforeExecution,
             classPath,
-            featurePaths,
-            opt.shuffleBacklogBeforeExecution
+            featurePaths
     )
 
     companion object {
