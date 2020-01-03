@@ -176,11 +176,11 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                             println("build ${originalJob.info.cucumberFeatureLocation} failed")
                             val thisTestRetryConfiguration = retryConfiguration[originalJob.info.synnefoOptions] ?: error("Failed to get the retry configuration for ${originalJob.info.cucumberFeatureLocation}")
                             if (thisTestRetryConfiguration.maxRetries > 0) {
-                                println("It's still possible to retry with ${thisTestRetryConfiguration.maxRetries} total retires left")
+                                println("It's still possible to retry with ${thisTestRetryConfiguration.maxRetries} total retries left")
                                 val previousRetries = triesPerTest.getOrDefault(originalJob.info.cucumberFeatureLocation, 0);
                                 triesPerTest[originalJob.info.cucumberFeatureLocation] = previousRetries + 1;
                                 val currentRetries = triesPerTest[originalJob.info.cucumberFeatureLocation]!!
-                                if (currentRetries < thisTestRetryConfiguration.retriesPerTest) {
+                                if (currentRetries <= thisTestRetryConfiguration.retriesPerTest) {
                                     println("Adding the test back to the backlog.")
                                     thisTestRetryConfiguration.maxRetries--
                                     backlog.add(originalJob.info)
