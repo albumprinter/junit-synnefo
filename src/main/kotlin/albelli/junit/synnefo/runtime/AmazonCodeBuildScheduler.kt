@@ -184,6 +184,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                                     println("Adding the test back to the backlog.")
                                     thisTestRetryConfiguration.maxRetries--
                                     backlog.add(originalJob.info)
+                                    return@run 
                                 } else  {
                                     println("But this test had exhausted the maximum retries per test")
                                 }
