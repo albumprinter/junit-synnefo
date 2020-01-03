@@ -173,26 +173,24 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                         }
 
                         FAILED, FAULT -> run {
-                            job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
-                            s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
                             println("build ${originalJob.info.cucumberFeatureLocation} failed")
-
                             val thisTestRetryConfiguration = retryConfiguration[originalJob.info.synnefoOptions] ?: error("Failed to get the retry configuration for ${originalJob.info.cucumberFeatureLocation}")
-                            if (thisTestRetryConfiguration.maxRetries == 0)
-                                return@run
-
-                            println("It's still possible to retry with ${thisTestRetryConfiguration.maxRetries} total retires left")
-                            val previousRetries = triesPerTest.getOrDefault(originalJob.info.cucumberFeatureLocation, 0);
-                            triesPerTest[originalJob.info.cucumberFeatureLocation] = previousRetries + 1;
-                            val currentRetries = triesPerTest[originalJob.info.cucumberFeatureLocation]!!
-                            if (currentRetries > thisTestRetryConfiguration.retriesPerTest) {
-                                println("But this test had exhausted the maximum retries")
-                                return@run
+                            if (thisTestRetryConfiguration.maxRetries > 0) {
+                                println("It's still possible to retry with ${thisTestRetryConfiguration.maxRetries} total retires left")
+                                val previousRetries = triesPerTest.getOrDefault(originalJob.info.cucumberFeatureLocation, 0);
+                                triesPerTest[originalJob.info.cucumberFeatureLocation] = previousRetries + 1;
+                                val currentRetries = triesPerTest[originalJob.info.cucumberFeatureLocation]!!
+                                if (currentRetries < thisTestRetryConfiguration.retriesPerTest) {
+                                    println("Adding the test back to the backlog.")
+                                    thisTestRetryConfiguration.maxRetries--
+                                    backlog.add(originalJob.info)
+                                } else  {
+                                    println("But this test had exhausted the maximum retries per test")
+                                }
                             }
 
-                            println("Adding the test back to the backlog.")
-                            thisTestRetryConfiguration.maxRetries--
-                            backlog.add(originalJob.info)
+                            job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
+                            s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
                         }
 
                         SUCCEEDED -> {
@@ -224,8 +222,8 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                                     val settings = it.synnefoOptions
                                     val location = sourceLocations[settings]
                                             ?: error("For whatever reason we don't have the source location for this setting")
-
-                                    GlobalScope.async { startBuild(job, settings, location, it) }
+                                    val shouldTriggerNotifier = !triesPerTest.containsKey(it.cucumberFeatureLocation)
+                                    GlobalScope.async { startBuild(job, settings, location, it, shouldTriggerNotifier) }
                                 }
                                 .map { it.await() }
 
@@ -354,7 +352,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         codeBuild.createProject(createRequest).await()
     }
 
-    private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo): ScheduledJob {
+    private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo, triggerTestStarted: Boolean): ScheduledJob {
         val useStandardImage = settings.image.startsWith("aws/codebuild/standard:2.0")
 
         val buildSpec = generateBuildspecForFeature(Paths.get(settings.classPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions, useStandardImage)
@@ -380,7 +378,9 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         val startBuildResponse =  codeBuild.startBuild(buildStartRequest).await()
         val buildId = startBuildResponse.build().id()
         val junitDescription = Description.createTestDescription("Synnefo", info.cucumberFeatureLocation)
-        job.notifier.fireTestStarted(junitDescription)
+
+        if (triggerTestStarted)
+            job.notifier.fireTestStarted(junitDescription)
 
         return ScheduledJob(job, buildId, info, junitDescription)
     }
