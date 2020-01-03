@@ -22,6 +22,8 @@ internal class SynnefoProperties(
         val outputFileName: String,
         val cucumberForcedTags: String,
         val shuffleBacklogBeforeExecution: Boolean,
+        val maxRetries: Int,
+        val retriesPerTest: Int,
         val classPath: String,
         val featurePaths: List<URI>)
 {
@@ -40,6 +42,8 @@ internal class SynnefoProperties(
             getAnyVar("outputFileName", opt.outputFileName),
             opt.cucumberForcedTags,
             getAnyVar("shuffleBacklogBeforeExecution", opt.shuffleBacklogBeforeExecution),
+            getAnyVar("maxRetries", opt.maxRetries),
+            getAnyVar("retriesPerTest", opt.retriesPerTest),
             "",
             listOf()
     )
@@ -59,6 +63,8 @@ internal class SynnefoProperties(
             opt.outputFileName,
             opt.cucumberForcedTags,
             opt.shuffleBacklogBeforeExecution,
+            opt.maxRetries,
+            opt.retriesPerTest,
             classPath,
             featurePaths
     )
