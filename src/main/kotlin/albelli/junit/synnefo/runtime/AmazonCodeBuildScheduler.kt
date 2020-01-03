@@ -2,6 +2,8 @@ package albelli.junit.synnefo.runtime
 
 import albelli.junit.synnefo.runtime.exceptions.SynnefoException
 import albelli.junit.synnefo.runtime.exceptions.SynnefoTestFailureException
+import albelli.junit.synnefo.runtime.exceptions.SynnefoTestStoppedException
+import albelli.junit.synnefo.runtime.exceptions.SynnefoTestTimedOutException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
 import org.junit.runner.Description
@@ -19,6 +21,7 @@ import java.io.File
 import java.net.URI
 import java.nio.file.Paths
 import java.util.*
+import kotlin.collections.HashMap
 
 internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
@@ -87,7 +90,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             println("No feature paths specified, will do nothing")
             return
         }
-        println("Going to run $featuresCount jobs")
 
         val locationMap = uniqueProps.map {
             val sourceLocation = uploadToS3AndGetSourcePath(it)
@@ -98,7 +100,9 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         // Use the sum of the threads as the total amount of threads available.
         // The downside of this approach is that if an override is used, the same value would be plugged in into both annotations
         val threads = uniqueProps.map { it.threads }.sum()
-        runAndWaitForJobs(job, threads, locationMap)
+
+        val retryConfiguration = uniqueProps.map { it to RetryConfiguration(it.maxRetries, it.retriesPerTest) }.toMap()
+        runAndWaitForJobs(job, threads, locationMap, retryConfiguration)
         println("all jobs have finished")
 
         for(prop in uniqueProps) {
@@ -128,11 +132,14 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         this.deleteObjects(deleteObjectsRequest).await()
     }
 
-    private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>) {
+    private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>, retryConfiguration: Map<SynnefoProperties, RetryConfiguration>) {
+        val triesPerTest : MutableMap<String, Int> = HashMap();
         val currentQueue = LinkedList<ScheduledJob>()
         val backlog = job.runnerInfos.toMutableList()
         val codeBuildRequestLimit = 100
         val s3Tasks = ArrayList<Deferred<Unit>>()
+
+        println("Going to run ${backlog.count()} jobs")
 
         var periodicalUpdateTicker = 0
 
@@ -153,10 +160,39 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                     val originalJob = lookupDict.getValue(build.id())
 
                     when (build.buildStatus()!!) {
-                        STOPPED, TIMED_OUT, FAILED, FAULT -> {
+                        STOPPED -> {
+                            job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestStoppedException("Test ${originalJob.info.cucumberFeatureLocation}")))
+                            s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                            println("build ${originalJob.info.cucumberFeatureLocation} was stopped")
+                        }
+
+                        TIMED_OUT -> {
+                            job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestTimedOutException("Test ${originalJob.info.cucumberFeatureLocation}")))
+                            s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                            println("build ${originalJob.info.cucumberFeatureLocation} timed out")
+                        }
+
+                        FAILED, FAULT -> run {
                             job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
                             s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
                             println("build ${originalJob.info.cucumberFeatureLocation} failed")
+
+                            val thisTestRetryConfiguration = retryConfiguration[originalJob.info.synnefoOptions] ?: error("Failed to get the retry configuration for ${originalJob.info.cucumberFeatureLocation}")
+                            if (thisTestRetryConfiguration.maxRetries == 0)
+                                return@run
+
+                            println("It's still possible to retry with ${thisTestRetryConfiguration.maxRetries} total retires left")
+                            val previousRetries = triesPerTest.getOrDefault(originalJob.info.cucumberFeatureLocation, 0);
+                            triesPerTest[originalJob.info.cucumberFeatureLocation] = previousRetries + 1;
+                            val currentRetries = triesPerTest[originalJob.info.cucumberFeatureLocation]!!
+                            if (currentRetries > thisTestRetryConfiguration.retriesPerTest) {
+                                println("But this test had exhausted the maximum retries")
+                                return@run
+                            }
+
+                            println("Adding the test back to the backlog.")
+                            thisTestRetryConfiguration.maxRetries--
+                            backlog.add(originalJob.info)
                         }
 
                         SUCCEEDED -> {
@@ -453,4 +489,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                     String.format("-D%s=%s", it.first, it.second)
             }
     }
+
+    internal class RetryConfiguration (var maxRetries : Int, var retriesPerTest: Int)
 }
