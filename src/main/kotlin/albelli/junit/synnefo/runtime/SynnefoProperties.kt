@@ -4,7 +4,6 @@ import albelli.junit.synnefo.api.SynnefoOptions
 import albelli.junit.synnefo.api.SynnefoRunLevel
 import albelli.junit.synnefo.runtime.exceptions.SynnefoException
 import cucumber.api.CucumberOptions
-import software.amazon.awssdk.core.interceptor.Context
 import java.net.URI
 
 internal class SynnefoProperties(

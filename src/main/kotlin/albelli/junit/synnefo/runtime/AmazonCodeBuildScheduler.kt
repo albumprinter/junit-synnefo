@@ -75,8 +75,8 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             "  discard-paths: yes"
 
     internal data class Job(
-        val runnerInfos: List<SynnefoRunnerInfo>,
-        val notifier: RunNotifier
+            val runnerInfos: List<SynnefoRunnerInfo>,
+            val notifier: RunNotifier
     )
 
     internal data class ScheduledJob(val originalJob: Job, val buildId: String, val info: SynnefoRunnerInfo, val junitDescription: Description)
@@ -85,8 +85,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         val uniqueProps = job.runnerInfos.groupBy { it.synnefoOptions }.map { it.key }
 
         val featuresCount = uniqueProps.flatMap { it.featurePaths }.count()
-        if (featuresCount == 0)
-        {
+        if (featuresCount == 0) {
             println("No feature paths specified, will do nothing")
             return
         }
@@ -95,7 +94,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             val sourceLocation = uploadToS3AndGetSourcePath(it)
             ensureProjectExists(it)
             Pair(it, sourceLocation)
-        }.associateBy ( { it.first }, { it.second } )
+        }.associateBy({ it.first }, { it.second })
 
         // Use the sum of the threads as the total amount of threads available.
         // The downside of this approach is that if an override is used, the same value would be plugged in into both annotations
@@ -105,13 +104,14 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         runAndWaitForJobs(job, threads, locationMap, retryConfiguration)
         println("all jobs have finished")
 
-        for(prop in uniqueProps) {
-            s3.deleteS3uploads(prop.bucketName, locationMap[prop] ?: error("For whatever reason we don't have the source location for this setting"))
+        for (prop in uniqueProps) {
+            s3.deleteS3uploads(prop.bucketName, locationMap[prop]
+                    ?: error("For whatever reason we don't have the source location for this setting"))
         }
     }
 
     private suspend fun S3AsyncClient.deleteS3uploads(bucketName: String, prefix: String) {
-        if(prefix.isNullOrWhiteSpace())
+        if (prefix.isNullOrWhiteSpace())
             throw SynnefoException("prefix can't be empty")
 
         val listObjectsRequest = ListObjectsRequest
@@ -121,9 +121,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .build()
 
         val listResponse = s3.listObjects(listObjectsRequest).await()
-
         val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
-
         val deleteObjectsRequest = DeleteObjectsRequest.builder()
                 .bucket(bucketName)
                 .delete { t -> t.objects(identifiers) }
@@ -133,20 +131,19 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>, retryConfiguration: Map<SynnefoProperties, RetryConfiguration>) {
-        val triesPerTest : MutableMap<String, Int> = HashMap();
+        val triesPerTest: MutableMap<String, Int> = HashMap()
         val currentQueue = LinkedList<ScheduledJob>()
         val backlog = job.runnerInfos.toMutableList()
         val codeBuildRequestLimit = 100
         val s3Tasks = ArrayList<Deferred<Unit>>()
+        val notificationTicker = NotificationTicker(15) { println("current running total: ${currentQueue.size}; backlog: ${backlog.size}") }
 
         println("Going to run ${backlog.count()} jobs")
-
-        var periodicalUpdateTicker = 0
 
         while (backlog.size > 0 || currentQueue.size > 0) {
 
             if (!currentQueue.isEmpty()) {
-                val lookupDict: Map<String, ScheduledJob> = currentQueue.associateBy({ it.buildId }, { it })
+                val buildIdToJobMap: Map<String, ScheduledJob> = currentQueue.associateBy({ it.buildId }, { it })
                 val dequeuedIds = currentQueue.dequeueUpTo(codeBuildRequestLimit).map { it.buildId }
 
                 val request = BatchGetBuildsRequest
@@ -156,38 +153,34 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 val response = codeBuild.batchGetBuilds(request).await()
 
                 for (build in response.builds()) {
-
-                    val originalJob = lookupDict.getValue(build.id())
+                    val originalJob = buildIdToJobMap.getValue(build.id())
 
                     when (build.buildStatus()!!) {
                         STOPPED -> {
-                            job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestStoppedException("Test ${originalJob.info.cucumberFeatureLocation}")))
-                            s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
                             println("build ${originalJob.info.cucumberFeatureLocation} was stopped")
+                            job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestStoppedException("Test ${originalJob.info.cucumberFeatureLocation}")))
                         }
 
                         TIMED_OUT -> {
-                            job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestTimedOutException("Test ${originalJob.info.cucumberFeatureLocation}")))
-                            s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
                             println("build ${originalJob.info.cucumberFeatureLocation} timed out")
+                            job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestTimedOutException("Test ${originalJob.info.cucumberFeatureLocation}")))
                         }
 
                         FAILED, FAULT -> run {
                             println("build ${originalJob.info.cucumberFeatureLocation} failed")
-                            val thisTestRetryConfiguration = retryConfiguration[originalJob.info.synnefoOptions] ?: error("Failed to get the retry configuration for ${originalJob.info.cucumberFeatureLocation}")
+                            val thisTestRetryConfiguration = retryConfiguration[originalJob.info.synnefoOptions]
+                                    ?: error("Failed to get the retry configuration for ${originalJob.info.cucumberFeatureLocation}")
                             if (thisTestRetryConfiguration.maxRetries > 0) {
                                 println("It's still possible to retry with ${thisTestRetryConfiguration.maxRetries} total retries left")
-                                val previousRetries = triesPerTest.getOrDefault(originalJob.info.cucumberFeatureLocation, 0);
-                                triesPerTest[originalJob.info.cucumberFeatureLocation] = previousRetries + 1;
-                                val currentRetries = triesPerTest[originalJob.info.cucumberFeatureLocation]!!
-                                if (currentRetries <= thisTestRetryConfiguration.retriesPerTest) {
+                                val newRetries = triesPerTest.getOrDefault(originalJob.info.cucumberFeatureLocation, 0) + 1
+                                if (newRetries <= thisTestRetryConfiguration.retriesPerTest) {
                                     println("Adding the test back to the backlog.")
+                                    triesPerTest[originalJob.info.cucumberFeatureLocation] = newRetries
                                     thisTestRetryConfiguration.maxRetries--
                                     backlog.add(originalJob.info)
-                                    return@run 
-                                } else  {
-                                    println("But this test had exhausted the maximum retries per test")
+                                    return@run
                                 }
+                                println("But this test had exhausted the maximum retries per test")
                             }
 
                             job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
@@ -195,9 +188,9 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                         }
 
                         SUCCEEDED -> {
+                            println("build ${originalJob.info.cucumberFeatureLocation} succeeded")
                             job.notifier.fireTestFinished(originalJob.junitDescription)
                             s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
-                            println("build ${originalJob.info.cucumberFeatureLocation} succeeded")
                         }
 
                         IN_PROGRESS -> currentQueue.addLast(originalJob)
@@ -208,25 +201,22 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             }
 
             val availableSlots = threads - currentQueue.size
-
             val jobsToSpawn = backlog.dequeueUpTo(availableSlots)
 
             val rate = 25
             while (jobsToSpawn.isNotEmpty()) {
-                val currentBatch = jobsToSpawn
-                        .dequeueUpTo(rate)
+                val currentBatch = jobsToSpawn.dequeueUpTo(rate)
 
-                val scheduledJobs =
-                        currentBatch
-                                .map {
+                val scheduledJobs = currentBatch
+                        .map {
 
-                                    val settings = it.synnefoOptions
-                                    val location = sourceLocations[settings]
-                                            ?: error("For whatever reason we don't have the source location for this setting")
-                                    val shouldTriggerNotifier = !triesPerTest.containsKey(it.cucumberFeatureLocation)
-                                    GlobalScope.async { startBuild(job, settings, location, it, shouldTriggerNotifier) }
-                                }
-                                .map { it.await() }
+                            val settings = it.synnefoOptions
+                            val location = sourceLocations[settings]
+                                    ?: error("For whatever reason we don't have the source location for this setting")
+                            val shouldTriggerNotifier = !triesPerTest.containsKey(it.cucumberFeatureLocation)
+                            GlobalScope.async { startBuild(job, settings, location, it, shouldTriggerNotifier) }
+                        }
+                        .map { it.await() }
 
                 currentQueue.addAll(scheduledJobs)
                 println("started ${currentBatch.count()} jobs")
@@ -234,19 +224,13 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             }
 
             delay(2000)
-            periodicalUpdateTicker++
-            if (periodicalUpdateTicker > 15)
-            {
-                println("current running total: ${currentQueue.size}; backlog: ${backlog.size}")
-                periodicalUpdateTicker = 0
-            }
+            notificationTicker.tick()
         }
 
         s3Tasks.awaitAll()
     }
 
-    private suspend fun collectArtifact(result : ScheduledJob)
-    {
+    private suspend fun collectArtifact(result: ScheduledJob) {
         val targetDirectory = result.info.synnefoOptions.reportTargetDir
 
         val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
@@ -271,7 +255,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private suspend fun uploadToS3AndGetSourcePath(settings: SynnefoProperties): String {
-
         println("uploadToS3AndGetSourcePath")
 
         val targetDirectory = settings.bucketSourceFolder + UUID.randomUUID() + "/"
@@ -280,8 +263,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         val jarFileName = jarPath.fileName.toString()
 
         for (feature in settings.featurePaths) {
-            if (!feature.scheme.equals("classpath", true))
-            {
+            if (!feature.scheme.equals("classpath", true)) {
                 s3.multipartUploadFile(settings.bucketName, targetDirectory + feature.schemeSpecificPart, feature, 5)
             }
         }
@@ -301,7 +283,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private suspend fun projectExists(projectName: String?): Boolean {
-
         val batchGetProjectsRequest = BatchGetProjectsRequest
                 .builder()
                 .names(projectName)
@@ -376,7 +357,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .build()
 
 
-        val startBuildResponse =  codeBuild.startBuild(buildStartRequest).await()
+        val startBuildResponse = codeBuild.startBuild(buildStartRequest).await()
         val buildId = startBuildResponse.build().id()
         val junitDescription = Description.createTestDescription("Synnefo", info.cucumberFeatureLocation)
 
@@ -387,7 +368,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private fun readFileChunks(file: URI, partSizeMb: Int) = sequence {
-
         val connection = file.toValidURL(classLoader).openConnection()
         val stream = connection.getInputStream()
 
@@ -425,18 +405,18 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
         val partETags =
                 chunks.map {
-            val uploadRequest = UploadPartRequest.builder()
-                    .bucket(bucket)
-                    .key(filteredKey)
-                    .uploadId(response.uploadId())
-                    .partNumber(it.first)
-                    .build()
-            val data = AsyncRequestBody.fromBytes(it.second)
+                    val uploadRequest = UploadPartRequest.builder()
+                            .bucket(bucket)
+                            .key(filteredKey)
+                            .uploadId(response.uploadId())
+                            .partNumber(it.first)
+                            .build()
+                    val data = AsyncRequestBody.fromBytes(it.second)
 
-            val etag = s3clientExt.uploadPart(uploadRequest, data).await().eTag()
+                    val etag = s3clientExt.uploadPart(uploadRequest, data).await().eTag()
 
-            CompletedPart.builder().partNumber(it.first).eTag(etag).build()
-        }
+                    CompletedPart.builder().partNumber(it.first).eTag(etag).build()
+                }
 
         val completedMultipartUpload = CompletedMultipartUpload.builder().parts(partETags)
                 .build()
@@ -457,39 +437,51 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         sb.appendWithEscaping("./../$jar")
         getSystemProperties().forEach { sb.appendWithEscaping(it) }
         sb.appendWithEscaping("cucumber.api.cli.Main")
-        if(feature.startsWith("classpath")) {
+        if (feature.startsWith("classpath")) {
             sb.appendWithEscaping(feature)
-        }
-        else {
+        } else {
             sb.appendWithEscaping("./../$feature")
         }
         runtimeOptions.forEach { sb.appendWithEscaping(it) }
 
-        val image = if (useStandardImage) { this.buildSpecTemplateStandard2_0 } else {this.buildSpecTemplate }
+        val image = if (useStandardImage) {
+            this.buildSpecTemplateStandard2_0
+        } else {
+            this.buildSpecTemplate
+        }
         return String.format(image, sb.toString())
     }
 
     private fun getSystemProperties(): List<String> {
-
         val transferrableProperties = System.getProperty("SynnefoTransferrableProperties")
-        if(transferrableProperties.isNullOrWhiteSpace())
+        if (transferrableProperties.isNullOrWhiteSpace())
             return arrayListOf()
 
         val propertiesList = transferrableProperties.split(';')
 
         return System.getProperties()
-            .map {
-                Pair(it.key.toString(), it.value.toString().trim())
-            }
-            .filter { pair ->
-                val isNotIgnored = propertiesList.any { pair.first.startsWith(it, ignoreCase = true) }
-                val isNotEmpty = !pair.second.isNullOrWhiteSpace()
-                isNotIgnored && isNotEmpty
-            }
-            .map {
+                .map {
+                    Pair(it.key.toString(), it.value.toString().trim())
+                }
+                .filter { pair ->
+                    val isNotIgnored = propertiesList.any { pair.first.startsWith(it, ignoreCase = true) }
+                    val isNotEmpty = !pair.second.isNullOrWhiteSpace()
+                    isNotIgnored && isNotEmpty
+                }
+                .map {
                     String.format("-D%s=%s", it.first, it.second)
-            }
+                }
     }
 
-    internal class RetryConfiguration (var maxRetries : Int, var retriesPerTest: Int)
+    internal class RetryConfiguration(var maxRetries: Int, val retriesPerTest: Int)
+
+    internal class NotificationTicker(val times: Int, val tickFun: () -> Unit) {
+        private var internalTicker = 0
+        fun tick() {
+            if (internalTicker++ >= times) {
+                internalTicker = 0
+                tickFun()
+            }
+        }
+    }
 }
