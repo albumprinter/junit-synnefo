@@ -23,6 +23,7 @@ internal class SynnefoProperties(
         val shuffleBacklogBeforeExecution: Boolean,
         val maxRetries: Int,
         val retriesPerTest: Int,
+        val codeBuildRunTimeVersions: Array<String>,
         val classPath: String,
         val featurePaths: List<URI>)
 {
@@ -43,6 +44,7 @@ internal class SynnefoProperties(
             getAnyVar("shuffleBacklogBeforeExecution", opt.shuffleBacklogBeforeExecution),
             getAnyVar("maxRetries", opt.maxRetries),
             getAnyVar("retriesPerTest", opt.retriesPerTest),
+            opt.codeBuildRunTimeVersions,
             "",
             listOf()
     )
@@ -64,6 +66,7 @@ internal class SynnefoProperties(
             opt.shuffleBacklogBeforeExecution,
             opt.maxRetries,
             opt.retriesPerTest,
+            opt.codeBuildRunTimeVersions,
             classPath,
             featurePaths
     )
