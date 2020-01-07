@@ -74,7 +74,15 @@ annotation class SynnefoOptions(
         /**
          * @return value indicating whether we should shuffle the backlog of tasks before scheduling them in CodeBuild
          */
-        val shuffleBacklogBeforeExecution: Boolean = false
+        val shuffleBacklogBeforeExecution: Boolean = false,
+        /**
+         * @return value indicating how many times the whole run can retry
+         */
+        val maxRetries: Int = 0,
+        /**
+         * @return value indicating how many times can an individual test be retried
+         */
+        val retriesPerTest: Int = 3
 )
 @Retention(RetentionPolicy.RUNTIME)
 @Target(AnnotationTarget.CLASS)

@@ -4,7 +4,6 @@ import albelli.junit.synnefo.api.SynnefoOptions
 import albelli.junit.synnefo.api.SynnefoRunLevel
 import albelli.junit.synnefo.runtime.exceptions.SynnefoException
 import cucumber.api.CucumberOptions
-import software.amazon.awssdk.core.interceptor.Context
 import java.net.URI
 
 internal class SynnefoProperties(
@@ -22,6 +21,8 @@ internal class SynnefoProperties(
         val outputFileName: String,
         val cucumberForcedTags: String,
         val shuffleBacklogBeforeExecution: Boolean,
+        val maxRetries: Int,
+        val retriesPerTest: Int,
         val classPath: String,
         val featurePaths: List<URI>)
 {
@@ -40,6 +41,8 @@ internal class SynnefoProperties(
             getAnyVar("outputFileName", opt.outputFileName),
             opt.cucumberForcedTags,
             getAnyVar("shuffleBacklogBeforeExecution", opt.shuffleBacklogBeforeExecution),
+            getAnyVar("maxRetries", opt.maxRetries),
+            getAnyVar("retriesPerTest", opt.retriesPerTest),
             "",
             listOf()
     )
@@ -59,6 +62,8 @@ internal class SynnefoProperties(
             opt.outputFileName,
             opt.cucumberForcedTags,
             opt.shuffleBacklogBeforeExecution,
+            opt.maxRetries,
+            opt.retriesPerTest,
             classPath,
             featurePaths
     )
