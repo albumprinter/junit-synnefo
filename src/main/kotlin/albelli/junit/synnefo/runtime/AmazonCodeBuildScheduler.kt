@@ -435,6 +435,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         sb.appendWithEscaping("java")
         sb.appendWithEscaping("-cp")
         sb.appendWithEscaping("./../$jar")
+        sb.appendWithEscaping(String.format("-D%s=%s", "java.random.seed", randomSeed))
         getSystemProperties().forEach { sb.appendWithEscaping(it) }
         sb.appendWithEscaping("cucumber.api.cli.Main")
         if (feature.startsWith("classpath")) {
@@ -444,7 +445,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         }
         runtimeOptions.forEach { sb.appendWithEscaping(it) }
 
-        sb.appendWithEscaping(String.format("-D%s=%s", "java.random.seed", randomSeed))
 
         val image = if (useStandardImage) {
             this.buildSpecTemplateStandard2_0
