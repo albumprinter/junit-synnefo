@@ -76,14 +76,14 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
     internal data class Job(
             val runnerInfos: List<SynnefoRunnerInfo>,
-            val notifier: RunNotifier
+            val notifier: RunNotifier,
+            val randomSeed : Long = System.currentTimeMillis()
     )
 
     internal data class ScheduledJob(val originalJob: Job, val buildId: String, val info: SynnefoRunnerInfo, val junitDescription: Description)
 
     internal suspend fun scheduleAndWait(job: Job) {
         val uniqueProps = job.runnerInfos.groupBy { it.synnefoOptions }.map { it.key }
-
         val featuresCount = uniqueProps.flatMap { it.featurePaths }.count()
         if (featuresCount == 0) {
             println("No feature paths specified, will do nothing")
@@ -337,7 +337,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo, triggerTestStarted: Boolean): ScheduledJob {
         val useStandardImage = settings.image.startsWith("aws/codebuild/standard:2.0")
 
-        val buildSpec = generateBuildspecForFeature(Paths.get(settings.classPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions, useStandardImage)
+        val buildSpec = generateBuildspecForFeature(Paths.get(settings.classPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions, useStandardImage, job.randomSeed)
 
         val buildStartRequest = StartBuildRequest.builder()
                 .projectName(settings.projectName)
@@ -430,7 +430,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         s3clientExt.completeMultipartUpload(completeMultipartUploadRequest).await()
     }
 
-    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>, useStandardImage: Boolean): String {
+    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>, useStandardImage: Boolean, randomSeed : Long): String {
         val sb = StringBuilder()
         sb.appendWithEscaping("java")
         sb.appendWithEscaping("-cp")
@@ -443,6 +443,8 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             sb.appendWithEscaping("./../$feature")
         }
         runtimeOptions.forEach { sb.appendWithEscaping(it) }
+
+        sb.appendWithEscaping(String.format("-D%s=%s", "java.random.seed", randomSeed))
 
         val image = if (useStandardImage) {
             this.buildSpecTemplateStandard2_0
