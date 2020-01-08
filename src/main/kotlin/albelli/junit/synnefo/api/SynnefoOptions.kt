@@ -87,7 +87,7 @@ annotation class SynnefoOptions(
          * @return a set of CodeBuild runtimes to initialize.
          * See the docu for details: https://docs.aws.amazon.com/codebuild/latest/userguide/sample-runtime-versions.html
          */
-        val codeBuildRunTimeVersions: Array<String>
+        val codeBuildRunTimeVersions: Array<String> = []
         )
 @Retention(RetentionPolicy.RUNTIME)
 @Target(AnnotationTarget.CLASS)
