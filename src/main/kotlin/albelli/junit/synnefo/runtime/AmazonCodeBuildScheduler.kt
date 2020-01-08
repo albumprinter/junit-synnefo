@@ -31,35 +31,19 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     private val s3: S3AsyncClient = S3AsyncClient.builder().build()
     private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient.builder().build()
 
+    private val installPhaseTemplate =
+            "  install:\n" +
+            "    runtime-versions:\n" +
+            "%s\n"
+    // 5 spaces to indent the underlying items
+
     private val buildSpecTemplate = "version: 0.2\n" +
             "\n" +
             "phases:\n" +
             "  pre_build:\n" +
             "    commands:\n" +
             "      - echo Build started on `date`\n" +
-            "  build:\n" +
-            "    commands:\n" +
-            "      - mkdir result-artifacts\n" +
-            "      - cd result-artifacts\n" +
-            "      - %s\n" +
-            "      - ls\n" +
-            "  post_build:\n" +
-            "    commands:\n" +
-            "      - echo Build completed on `date`\n" +
-            "artifacts:\n" +
-            "  files:\n" +
-            "    - 'result-artifacts/**/*'\n" +
-            "  discard-paths: yes"
-
-    private val buildSpecTemplateStandard2_0 = "version: 0.2\n" +
-            "\n" +
-            "phases:\n" +
-            "  pre_build:\n" +
-            "    commands:\n" +
-            "      - echo Build started on `date`\n" +
-            "  install:\n" +
-            "    runtime-versions:\n" +
-            "      java: openjdk8\n" +
+            "%s" +
             "  build:\n" +
             "    commands:\n" +
             "      - mkdir result-artifacts\n" +
@@ -335,9 +319,11 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo, triggerTestStarted: Boolean): ScheduledJob {
-        val useStandardImage = settings.image.startsWith("aws/codebuild/standard:2.0")
+        val codeBuildRuntimes = settings.codeBuildRunTimeVersions.map { String.format("     %s", it.trim()) }
+        val installPhaseSection = if (codeBuildRuntimes.isEmpty()) "" else String.format(installPhaseTemplate, codeBuildRuntimes.joinToString())
 
-        val buildSpec = generateBuildspecForFeature(Paths.get(settings.classPath).fileName.toString(), info.cucumberFeatureLocation, info.runtimeOptions, useStandardImage, job.randomSeed)
+        val buildSpec = generateBuildspecForFeature(Paths.get(settings.classPath).fileName.toString()
+                , info.cucumberFeatureLocation, info.runtimeOptions, job.randomSeed, installPhaseSection)
 
         val buildStartRequest = StartBuildRequest.builder()
                 .projectName(settings.projectName)
@@ -430,7 +416,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         s3clientExt.completeMultipartUpload(completeMultipartUploadRequest).await()
     }
 
-    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>, useStandardImage: Boolean, randomSeed : Long): String {
+    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>, randomSeed : Long, installPhaseSection : String): String {
         val sb = StringBuilder()
         sb.appendWithEscaping("java")
         sb.appendWithEscaping("-cp")
@@ -445,13 +431,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         }
         runtimeOptions.forEach { sb.appendWithEscaping(it) }
 
-
-        val image = if (useStandardImage) {
-            this.buildSpecTemplateStandard2_0
-        } else {
-            this.buildSpecTemplate
-        }
-        return String.format(image, sb.toString())
+        return String.format(this.buildSpecTemplate, installPhaseSection, sb.toString())
     }
 
     private fun getSystemProperties(): List<String> {
