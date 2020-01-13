@@ -155,7 +155,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 for (build in response.builds()) {
                     val originalJob = buildIdToJobMap.getValue(build.id())
 
-
                     when (build.buildStatus()!!) {
                         STOPPED -> {
                             println("build ${originalJob.info.cucumberFeatureLocation} was stopped")
@@ -215,7 +214,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                             val location = sourceLocations[settings]
                                     ?: error("For whatever reason we don't have the source location for this setting")
                             val shouldTriggerNotifier = !triesPerTest.containsKey(it.cucumberFeatureLocation)
-                            GlobalScope.async {startBuild(job, settings, location, it, shouldTriggerNotifier) }
+                            GlobalScope.async { startBuild(job, settings, location, it, shouldTriggerNotifier) }
                         }
                         .map { it.await() }
 
