@@ -215,14 +215,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                             val location = sourceLocations[settings]
                                     ?: error("For whatever reason we don't have the source location for this setting")
                             val shouldTriggerNotifier = !triesPerTest.containsKey(it.cucumberFeatureLocation)
-                            GlobalScope.async {
-                                try {
-                                    startBuild(job, settings, location, it, shouldTriggerNotifier)
-                                } catch(e : Exception) {
-                                    println(e.message)
-                                    throw e
-                                }
-                            }
+                            GlobalScope.async {startBuild(job, settings, location, it, shouldTriggerNotifier) }
                         }
                         .map { it.await() }
 
