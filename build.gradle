@@ -66,7 +66,7 @@ dependencyManagement {
 }
 
 dependencies {
-    compile 'io.cucumber:cucumber-core:4.3.1'
+    compile 'io.cucumber:cucumber-core:4.8.1'
     compile 'io.cucumber:cucumber-java:4.3.1'
     compile 'io.cucumber:cucumber-java8:4.3.1'
     compile 'io.cucumber:cucumber-junit:4.3.1'
