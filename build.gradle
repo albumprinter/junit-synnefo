@@ -71,7 +71,7 @@ dependencies {
     compile 'io.cucumber:cucumber-java8:4.3.1'
     compile 'io.cucumber:cucumber-junit:4.3.1'
     compile 'software.amazon.awssdk:s3:2.10.47'
-    compile 'software.amazon.awssdk:codebuild:2.10.47'
+    compile 'software.amazon.awssdk:codebuild:2.10.48'
     compile 'software.amazon.awssdk:sdk-core:2.10.47'
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.3.3'
