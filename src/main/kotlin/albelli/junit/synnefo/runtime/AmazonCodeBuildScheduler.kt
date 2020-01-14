@@ -10,6 +10,9 @@ import org.junit.runner.Description
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
 import software.amazon.awssdk.core.async.AsyncRequestBody
+import software.amazon.awssdk.core.retry.RetryPolicy
+import software.amazon.awssdk.core.retry.RetryUtils
+import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
 import software.amazon.awssdk.core.sync.ResponseTransformer
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
@@ -29,7 +32,20 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     // Should we have an option to use these clients with keys/secrets?
     // At this point the only way to use them is to use the environment variables
     private val s3: S3AsyncClient = S3AsyncClient.builder().build()
-    private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient.builder().build()
+    private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient
+            .builder()
+            .overrideConfiguration {
+                it.retryPolicy(codeBuildRetryPolicy())
+            }
+            .build()
+
+    private fun codeBuildRetryPolicy(): RetryPolicy {
+        return RetryPolicy
+                .builder()
+                .retryCondition { RetryUtils.isServiceException(it.exception()) }
+                .backoffStrategy(BackoffStrategy.defaultThrottlingStrategy())
+                .build()
+    }
 
     private val installPhaseTemplate =
             "  install:\n" +
