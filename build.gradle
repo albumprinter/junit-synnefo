@@ -1,9 +1,16 @@
 buildscript {
-    ext.kotlin_version = '1.3.21'
+
+    ext {
+        kotlin_version = '1.3.21'
+        cucumber_version = '4.3.1'
+        jfrogKey = System.getenv('JFROG_BINTRAY_ACCESS_KEY')
+    }
+
     repositories {
         mavenCentral()
         jcenter()
     }
+
     dependencies {
         classpath "io.spring.gradle:dependency-management-plugin:1.0.3.RELEASE"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
@@ -13,10 +20,6 @@ buildscript {
 
 plugins {
     id "com.jfrog.bintray" version "1.8.4"
-}
-
-ext {
-    jfrogKey = System.getenv('JFROG_BINTRAY_ACCESS_KEY')
 }
 
 group 'albelli'
@@ -55,7 +58,7 @@ bintray {
         repo = 'random'
         name = 'junit.synnefo'
         licenses = ['Apache-2.0']
-        vcsUrl  = "https://github.com/albumprinter/junit-synnefo"
+        vcsUrl = "https://github.com/albumprinter/junit-synnefo"
     }
 }
 
@@ -66,10 +69,10 @@ dependencyManagement {
 }
 
 dependencies {
-    compile 'io.cucumber:cucumber-core:4.3.1'
-    compile 'io.cucumber:cucumber-java:4.3.1'
-    compile 'io.cucumber:cucumber-java8:4.3.1'
-    compile 'io.cucumber:cucumber-junit:4.3.1'
+    compile "io.cucumber:cucumber-core:$cucumber_version"
+    compile "io.cucumber:cucumber-java:$cucumber_version"
+    compile "io.cucumber:cucumber-java8:$cucumber_version"
+    compile "io.cucumber: cucumber - junit:$cucumber_version"
     compile 'software.amazon.awssdk:s3:2.10.48'
     compile 'software.amazon.awssdk:codebuild:2.10.48'
     compile 'software.amazon.awssdk:sdk-core:2.10.47'
@@ -95,6 +98,7 @@ publishing {
         }
     }
 }
+
 compileKotlin {
     kotlinOptions {
         jvmTarget = "1.8"
