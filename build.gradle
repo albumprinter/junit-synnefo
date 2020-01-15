@@ -8,11 +8,10 @@ buildscript {
 
     repositories {
         mavenCentral()
-        jcenter()
     }
 
     dependencies {
-        classpath "io.spring.gradle:dependency-management-plugin:1.0.3.RELEASE"
+        classpath "io.spring.gradle:dependency-management-plugin:1.0.8.RELEASE"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
         classpath "org.jetbrains.kotlin:kotlin-allopen:$kotlin_version"
     }
@@ -33,7 +32,6 @@ targetCompatibility = 1.8
 
 repositories {
     mavenCentral()
-    jcenter()
 }
 
 apply plugin: 'kotlin'
@@ -64,7 +62,7 @@ bintray {
 
 dependencyManagement {
     imports {
-        mavenBom 'software.amazon.awssdk:bom:2.5.18'
+        mavenBom 'software.amazon.awssdk:bom:2.10.49'
     }
 }
 
@@ -73,7 +71,7 @@ dependencies {
     compile "io.cucumber:cucumber-java:$cucumber_version"
     compile "io.cucumber:cucumber-java8:$cucumber_version"
     compile "io.cucumber:cucumber-junit:$cucumber_version"
-    compile 'software.amazon.awssdk:s3:2.10.48'
+    compile 'software.amazon.awssdk:s3:2.10.49'
     compile 'software.amazon.awssdk:codebuild:2.10.48'
     compile 'software.amazon.awssdk:sdk-core:2.10.47'
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
