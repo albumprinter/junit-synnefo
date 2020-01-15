@@ -6,10 +6,6 @@ buildscript {
         jfrogKey = System.getenv('JFROG_BINTRAY_ACCESS_KEY')
     }
 
-    repositories {
-        mavenCentral()
-    }
-
     dependencies {
         classpath "io.spring.gradle:dependency-management-plugin:1.0.8.RELEASE"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
