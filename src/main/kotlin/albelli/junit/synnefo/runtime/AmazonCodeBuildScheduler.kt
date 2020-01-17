@@ -10,10 +10,12 @@ import org.junit.runner.Description
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
 import software.amazon.awssdk.core.async.AsyncRequestBody
+import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.core.retry.RetryPolicy
 import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
 import software.amazon.awssdk.core.sync.ResponseTransformer
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
@@ -31,7 +33,10 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     // TODO
     // Should we have an option to use these clients with keys/secrets?
     // At this point the only way to use them is to use the environment variables
-    private val s3: S3AsyncClient = S3AsyncClient.builder().build()
+    private val s3: S3AsyncClient = S3AsyncClient
+            .builder()
+            .httpClientBuilder { NettyNioAsyncHttpClient.builder().maxConcurrency(100).build() }
+            .build()
     private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient
             .builder()
             .overrideConfiguration {
@@ -241,15 +246,8 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .key(keyPath)
                 .build()!!
 
-        // TODO:
-        // Use the async client from above
-        // Once the buggy S3 client is fixed by Amazon
-        val client = S3Client
-                .builder()
-                .build()
-        val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
-
-        ZipHelper.unzip(response, targetDirectory)
+        val response = s3.getObject(getObjectRequest, AsyncResponseTransformer.toBytes()).await()
+        ZipHelper.unzip(response.asByteArray(), targetDirectory)
         s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
