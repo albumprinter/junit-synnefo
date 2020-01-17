@@ -58,7 +58,7 @@ bintray {
 
 dependencyManagement {
     imports {
-        mavenBom "software.amazon.awssdk:bom:2.10.49"
+        mavenBom "software.amazon.awssdk:bom:2.10.50"
     }
 }
 
