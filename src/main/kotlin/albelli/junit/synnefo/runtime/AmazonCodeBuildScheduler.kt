@@ -23,6 +23,7 @@ import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.*
 import java.io.File
+import java.lang.Exception
 import java.net.URI
 import java.nio.file.Paths
 import java.util.*
@@ -37,6 +38,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             .builder()
             .httpClientBuilder { NettyNioAsyncHttpClient.builder().maxConcurrency(100).build() }
             .build()
+
     private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient
             .builder()
             .overrideConfiguration {
@@ -246,8 +248,18 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .key(keyPath)
                 .build()!!
 
-        val response = s3.getObject(getObjectRequest, AsyncResponseTransformer.toBytes()).await()
-        ZipHelper.unzip(response.asByteArray(), targetDirectory)
+        println(">>>>>>> GETTING OBJECT TO S3")
+
+        try {
+            val response = s3.getObject(getObjectRequest, AsyncResponseTransformer.toBytes()).await()
+            ZipHelper.unzip(response.asByteArray(), targetDirectory)
+        } catch (e: Exception) {
+            println(">>>>>>> EXCEPTION OCCURRED! ")
+            println(e)
+        }
+
+        println(">>>>>>> OBJECT RECEIVED FROM S3")
+
         s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
