@@ -14,16 +14,12 @@ import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.core.retry.RetryPolicy
 import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
-import software.amazon.awssdk.core.sync.ResponseTransformer
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
 import software.amazon.awssdk.services.s3.S3AsyncClient
-import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.*
-import java.io.File
-import java.lang.Exception
 import java.net.URI
 import java.nio.file.Paths
 import java.util.*
@@ -56,8 +52,8 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
     private val installPhaseTemplate =
             "  install:\n" +
-            "    runtime-versions:\n" +
-            "%s\n"
+                    "    runtime-versions:\n" +
+                    "%s\n"
     // 5 spaces to indent the underlying items
 
     private val buildSpecTemplate = "version: 0.2\n" +
@@ -84,7 +80,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     internal data class Job(
             val runnerInfos: List<SynnefoRunnerInfo>,
             val notifier: RunNotifier,
-            val randomSeed : Long = System.currentTimeMillis()
+            val randomSeed: Long = System.currentTimeMillis()
     )
 
     internal data class ScheduledJob(val originalJob: Job, val buildId: String, val info: SynnefoRunnerInfo, val junitDescription: Description)
@@ -112,8 +108,14 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         println("all jobs have finished")
 
         for (prop in uniqueProps) {
-            s3.deleteS3uploads(prop.bucketName, locationMap[prop]
-                    ?: error("For whatever reason we don't have the source location for this setting"))
+
+            try {
+                s3.deleteS3uploads(prop.bucketName, locationMap[prop]
+                        ?: error("For whatever reason we don't have the source location for this setting"))
+            } catch (e: Exception) {
+                println(">>>>>>> EXCEPTION OCCURRED! ")
+                println(e)
+            }
         }
     }
 
@@ -127,14 +129,20 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .prefix(prefix)
                 .build()
 
-        val listResponse = s3.listObjects(listObjectsRequest).await()
-        val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
-        val deleteObjectsRequest = DeleteObjectsRequest.builder()
-                .bucket(bucketName)
-                .delete { t -> t.objects(identifiers) }
-                .build()
+        try {
+            val listResponse = s3.listObjects(listObjectsRequest).await()
+            val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
+            val deleteObjectsRequest = DeleteObjectsRequest.builder()
+                    .bucket(bucketName)
+                    .delete { t -> t.objects(identifiers) }
+                    .build()
 
-        this.deleteObjects(deleteObjectsRequest).await()
+            this.deleteObjects(deleteObjectsRequest).await()
+
+        } catch (e: Exception) {
+            println(">>>>>>> EXCEPTION OCCURRED! ")
+            println(e)
+        }
     }
 
     private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>, retryConfiguration: Map<SynnefoProperties, RetryConfiguration>) {
@@ -248,8 +256,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .key(keyPath)
                 .build()!!
 
-        println(">>>>>>> GETTING OBJECT TO S3")
-
         try {
             val response = s3.getObject(getObjectRequest, AsyncResponseTransformer.toBytes()).await()
             ZipHelper.unzip(response.asByteArray(), targetDirectory)
@@ -258,10 +264,16 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             println(e)
         }
 
-        println(">>>>>>> OBJECT RECEIVED FROM S3")
 
-        s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
-        println("collected artifacts for ${result.info.cucumberFeatureLocation}")
+        try {
+            s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
+            println("collected artifacts for ${result.info.cucumberFeatureLocation}")
+        } catch (e: Exception) {
+            println(">>>>>>> EXCEPTION OCCURRED! ")
+            println(e)
+        }
+
+
     }
 
     private suspend fun uploadToS3AndGetSourcePath(settings: SynnefoProperties): String {
@@ -274,11 +286,17 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
         for (feature in settings.featurePaths) {
             if (!feature.scheme.equals("classpath", true)) {
-                s3.multipartUploadFile(settings.bucketName, targetDirectory + feature.schemeSpecificPart, feature, 5)
+
+                try {
+                    s3.multipartUploadFile(settings.bucketName, targetDirectory + feature.schemeSpecificPart, feature, 5)
+                } catch (e: Exception) {
+                    println(">>>>>>> EXCEPTION OCCURRED! ")
+                    println(e)
+                }
+
+
             }
         }
-
-        s3.multipartUploadFile(settings.bucketName, targetDirectory + jarFileName, File(settings.classPath).toURI(), 5)
 
         println("uploadToS3AndGetSourcePath done; path: $targetDirectory")
         return targetDirectory
@@ -442,7 +460,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         s3clientExt.completeMultipartUpload(completeMultipartUploadRequest).await()
     }
 
-    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>, randomSeed : Long, installPhaseSection : String): String {
+    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>, randomSeed: Long, installPhaseSection: String): String {
         val sb = StringBuilder()
         sb.appendWithEscaping("java")
         sb.appendWithEscaping("-cp")
