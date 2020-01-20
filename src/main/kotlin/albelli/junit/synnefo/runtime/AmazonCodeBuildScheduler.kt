@@ -36,7 +36,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     // At this point the only way to use them is to use the environment variables
     private val s3: S3AsyncClient = S3AsyncClient
             .builder()
-            .httpClientBuilder { NettyNioAsyncHttpClient.builder().maxConcurrency(100).build() }
+            .httpClientBuilder { NettyNioAsyncHttpClient.builder().maxConcurrency(20).build() }
             .build()
 
     private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient
