@@ -203,7 +203,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             val availableSlots = threads - currentQueue.size
             val jobsToSpawn = backlog.dequeueUpTo(availableSlots)
 
-            val rate = 25
+            val rate = 20
             while (jobsToSpawn.isNotEmpty()) {
                 val currentBatch = jobsToSpawn.dequeueUpTo(rate)
 
@@ -220,7 +220,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
                 currentQueue.addAll(scheduledJobs)
                 println("started ${currentBatch.count()} jobs")
-                delay(2500)
+                delay(3000)
             }
 
             delay(2000)
