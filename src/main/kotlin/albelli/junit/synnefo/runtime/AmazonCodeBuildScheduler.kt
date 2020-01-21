@@ -115,31 +115,35 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private suspend fun S3AsyncClient.deleteS3uploads(bucketName: String, prefix: String) {
-        try {
-            if (prefix.isNullOrWhiteSpace())
-                throw SynnefoException("prefix can't be empty")
+        val s3Client = this
+        coroutineScope {
+            try {
+                if (prefix.isNullOrWhiteSpace())
+                    throw SynnefoException("prefix can't be empty")
 
-            val listObjectsRequest = ListObjectsRequest
-                    .builder()
-                    .bucket(bucketName)
-                    .prefix(prefix)
-                    .build()
+                val listObjectsRequest = ListObjectsRequest
+                        .builder()
+                        .bucket(bucketName)
+                        .prefix(prefix)
+                        .build()
 
-            val listResponse = s3.listObjects(listObjectsRequest).await()
-            val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
-            val deleteObjectsRequest = DeleteObjectsRequest.builder()
-                    .bucket(bucketName)
-                    .delete { t -> t.objects(identifiers) }
-                    .build()
+                val listResponse = s3.listObjects(listObjectsRequest).await()
+                val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
+                val deleteObjectsRequest = DeleteObjectsRequest.builder()
+                        .bucket(bucketName)
+                        .delete { t -> t.objects(identifiers) }
+                        .build()
 
-            this.deleteObjects(deleteObjectsRequest).await()
-        } catch (e: Exception) {
-            println(">>>>>>>>> ERROR #1 - deleteS3uploads" + e.message)
-            throw e
+                s3Client.deleteObjects(deleteObjectsRequest).await()
+            } catch (e: Exception) {
+                println(">>>>>>>>> ERROR #1 - deleteS3uploads" + e.message)
+                throw e
+            }
         }
     }
 
     private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>, retryConfiguration: Map<SynnefoProperties, RetryConfiguration>) {
+
         val triesPerTest: MutableMap<String, Int> = HashMap()
         val currentQueue = LinkedList<ScheduledJob>()
         val backlog = job.runnerInfos.toMutableList()
@@ -152,65 +156,67 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         while (backlog.size > 0 || currentQueue.size > 0) {
 
             if (!currentQueue.isEmpty()) {
-                try {
-                    val buildIdToJobMap: Map<String, ScheduledJob> = currentQueue.associateBy({ it.buildId }, { it })
-                    val dequeuedIds = currentQueue.dequeueUpTo(codeBuildRequestLimit).map { it.buildId }
+                coroutineScope {
+                    try {
+                        val buildIdToJobMap: Map<String, ScheduledJob> = currentQueue.associateBy({ it.buildId }, { it })
+                        val dequeuedIds = currentQueue.dequeueUpTo(codeBuildRequestLimit).map { it.buildId }
 
-                    val request = BatchGetBuildsRequest
-                            .builder()
-                            .ids(dequeuedIds)
-                            .build()
-                    val response = codeBuild.batchGetBuilds(request).await()
+                        val request = BatchGetBuildsRequest
+                                .builder()
+                                .ids(dequeuedIds)
+                                .build()
+                        val response = codeBuild.batchGetBuilds(request).await()
 
-                    for (build in response.builds()) {
-                        val originalJob = buildIdToJobMap.getValue(build.id())
+                        for (build in response.builds()) {
+                            val originalJob = buildIdToJobMap.getValue(build.id())
 
-                        when (build.buildStatus()!!) {
-                            STOPPED -> {
-                                println("build ${originalJob.info.cucumberFeatureLocation} was stopped")
-                                job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestStoppedException("Test ${originalJob.info.cucumberFeatureLocation}")))
-                            }
-
-                            TIMED_OUT -> {
-                                println("build ${originalJob.info.cucumberFeatureLocation} timed out")
-                                job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestTimedOutException("Test ${originalJob.info.cucumberFeatureLocation}")))
-                            }
-
-                            FAILED, FAULT -> run {
-                                println("build ${originalJob.info.cucumberFeatureLocation} failed")
-                                val thisTestRetryConfiguration = retryConfiguration[originalJob.info.synnefoOptions]
-                                        ?: error("Failed to get the retry configuration for ${originalJob.info.cucumberFeatureLocation}")
-                                if (thisTestRetryConfiguration.maxRetries > 0) {
-                                    println("It's still possible to retry with ${thisTestRetryConfiguration.maxRetries} total retries left")
-                                    val newRetries = triesPerTest.getOrDefault(originalJob.info.cucumberFeatureLocation, 0) + 1
-                                    if (newRetries <= thisTestRetryConfiguration.retriesPerTest) {
-                                        println("Adding the test back to the backlog.")
-                                        triesPerTest[originalJob.info.cucumberFeatureLocation] = newRetries
-                                        thisTestRetryConfiguration.maxRetries--
-                                        backlog.add(originalJob.info)
-                                        return@run
-                                    }
-                                    println("But this test had exhausted the maximum retries per test")
+                            when (build.buildStatus()!!) {
+                                STOPPED -> {
+                                    println("build ${originalJob.info.cucumberFeatureLocation} was stopped")
+                                    job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestStoppedException("Test ${originalJob.info.cucumberFeatureLocation}")))
                                 }
 
-                                job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
-                                s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                                TIMED_OUT -> {
+                                    println("build ${originalJob.info.cucumberFeatureLocation} timed out")
+                                    job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestTimedOutException("Test ${originalJob.info.cucumberFeatureLocation}")))
+                                }
+
+                                FAILED, FAULT -> run {
+                                    println("build ${originalJob.info.cucumberFeatureLocation} failed")
+                                    val thisTestRetryConfiguration = retryConfiguration[originalJob.info.synnefoOptions]
+                                            ?: error("Failed to get the retry configuration for ${originalJob.info.cucumberFeatureLocation}")
+                                    if (thisTestRetryConfiguration.maxRetries > 0) {
+                                        println("It's still possible to retry with ${thisTestRetryConfiguration.maxRetries} total retries left")
+                                        val newRetries = triesPerTest.getOrDefault(originalJob.info.cucumberFeatureLocation, 0) + 1
+                                        if (newRetries <= thisTestRetryConfiguration.retriesPerTest) {
+                                            println("Adding the test back to the backlog.")
+                                            triesPerTest[originalJob.info.cucumberFeatureLocation] = newRetries
+                                            thisTestRetryConfiguration.maxRetries--
+                                            backlog.add(originalJob.info)
+                                            return@run
+                                        }
+                                        println("But this test had exhausted the maximum retries per test")
+                                    }
+
+                                    job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
+                                    s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                                }
+
+                                SUCCEEDED -> {
+                                    println("build ${originalJob.info.cucumberFeatureLocation} succeeded")
+                                    job.notifier.fireTestFinished(originalJob.junitDescription)
+                                    s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                                }
+
+                                IN_PROGRESS -> currentQueue.addLast(originalJob)
+
+                                UNKNOWN_TO_SDK_VERSION -> job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Received a UNKNOWN_TO_SDK_VERSION enum! This should not have happened really.")))
                             }
-
-                            SUCCEEDED -> {
-                                println("build ${originalJob.info.cucumberFeatureLocation} succeeded")
-                                job.notifier.fireTestFinished(originalJob.junitDescription)
-                                s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
-                            }
-
-                            IN_PROGRESS -> currentQueue.addLast(originalJob)
-
-                            UNKNOWN_TO_SDK_VERSION -> job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Received a UNKNOWN_TO_SDK_VERSION enum! This should not have happened really.")))
                         }
+                    } catch (e: Exception) {
+                        println(" >>>>>>>>> ERROR #5 - runAndWaitForJobs $e")
+                        throw e
                     }
-                } catch (e: Exception) {
-                    println(" >>>>>>>>> ERROR #5 - runAndWaitForJobs $e")
-                    throw e
                 }
             }
 
@@ -255,15 +261,15 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .key(keyPath)
                 .build()!!
 
-
-        try {
-            val response = s3.getObject(getObjectRequest, AsyncResponseTransformer.toBytes()).await()
-            ZipHelper.unzip(response.asByteArray(), targetDirectory)
-        } catch (e: Exception) {
-            println("ERROR #4 - getObject $e")
-            throw e
+        coroutineScope {
+            try {
+                val response = s3.getObject(getObjectRequest, AsyncResponseTransformer.toBytes()).await()
+                ZipHelper.unzip(response.asByteArray(), targetDirectory)
+            } catch (e: Exception) {
+                println("ERROR #4 - getObject $e")
+                throw e
+            }
         }
-
 
         s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
@@ -298,17 +304,19 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private suspend fun projectExists(projectName: String?): Boolean {
-        try {
-            val batchGetProjectsRequest = BatchGetProjectsRequest
-                    .builder()
-                    .names(projectName)
-                    .build()
+        return coroutineScope {
+            try {
+                val batchGetProjectsRequest = BatchGetProjectsRequest
+                        .builder()
+                        .names(projectName)
+                        .build()
 
-            val response = codeBuild.batchGetProjects(batchGetProjectsRequest).await()
-            return response.projects().size == 1
-        } catch (e: Exception) {
-            println(">>>>>> ERROR #6 - projectExists $e")
-            throw e
+                val response = codeBuild.batchGetProjects(batchGetProjectsRequest).await()
+                return@coroutineScope response.projects().size == 1
+            } catch (e: Exception) {
+                println(">>>>>> ERROR #6 - projectExists $e")
+                throw e
+            }
         }
     }
 
@@ -351,11 +359,13 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 }
                 .build()
 
-        try {
-            codeBuild.createProject(createRequest).await()
-        } catch (e: Exception) {
-            println(">>>>>>>>> ERROR # 7 - createCodeBuildProject $e" )
-            throw e
+        coroutineScope {
+            try {
+                codeBuild.createProject(createRequest).await()
+            } catch (e: Exception) {
+                println(">>>>>>>>> ERROR # 7 - createCodeBuildProject $e")
+                throw e
+            }
         }
     }
 
@@ -423,51 +433,55 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private suspend fun S3AsyncClient.multipartUploadFile(bucket: String, key: String, filePath: URI, partSizeMb: Int) {
-        try {
-            val s3clientExt = this
-            val filteredKey = key.replace("//", "/")
 
-            val createUploadRequest = CreateMultipartUploadRequest.builder()
-                    .key(filteredKey)
-                    .bucket(bucket)
-                    .build()
+        val s3clientExt = this
 
-            val response = s3clientExt.createMultipartUpload(createUploadRequest).await()
+        coroutineScope {
+            try {
+                val filteredKey = key.replace("//", "/")
 
-            val chunks = readFileChunks(filePath, partSizeMb).toList()
+                val createUploadRequest = CreateMultipartUploadRequest.builder()
+                        .key(filteredKey)
+                        .bucket(bucket)
+                        .build()
 
-            val partETags =
-                    chunks.map {
-                        val uploadRequest = UploadPartRequest.builder()
+                val response = s3clientExt.createMultipartUpload(createUploadRequest).await()
+
+                val chunks = readFileChunks(filePath, partSizeMb).toList()
+
+                val partETags =
+                        chunks.map {
+                            val uploadRequest = UploadPartRequest.builder()
+                                    .bucket(bucket)
+                                    .key(filteredKey)
+                                    .uploadId(response.uploadId())
+                                    .partNumber(it.first)
+                                    .build()
+                            val data = AsyncRequestBody.fromBytes(it.second)
+
+                            val etag = try {
+                                s3clientExt.uploadPart(uploadRequest, data).await().eTag()
+                            } catch (e: Exception) {
+                                println(">>>>>>>> ERROR #2 - uploadPart $e")
+                                throw e
+                            }
+                            CompletedPart.builder().partNumber(it.first).eTag(etag).build()
+                        }
+
+                val completedMultipartUpload = CompletedMultipartUpload.builder().parts(partETags)
+                        .build()
+                val completeMultipartUploadRequest =
+                        CompleteMultipartUploadRequest.builder()
                                 .bucket(bucket)
                                 .key(filteredKey)
                                 .uploadId(response.uploadId())
-                                .partNumber(it.first)
+                                .multipartUpload(completedMultipartUpload)
                                 .build()
-                        val data = AsyncRequestBody.fromBytes(it.second)
-
-                        val etag = try {
-                            s3clientExt.uploadPart(uploadRequest, data).await().eTag()
-                        } catch (e: Exception) {
-                            println(">>>>>>>> ERROR #2 - uploadPart $e")
-                            throw e
-                        }
-                        CompletedPart.builder().partNumber(it.first).eTag(etag).build()
-                    }
-
-            val completedMultipartUpload = CompletedMultipartUpload.builder().parts(partETags)
-                    .build()
-            val completeMultipartUploadRequest =
-                    CompleteMultipartUploadRequest.builder()
-                            .bucket(bucket)
-                            .key(filteredKey)
-                            .uploadId(response.uploadId())
-                            .multipartUpload(completedMultipartUpload)
-                            .build()
-            s3clientExt.completeMultipartUpload(completeMultipartUploadRequest).await()
-        } catch (e: Exception) {
-            println(">>>>>>>>>> ERROR #3 - multipartUploadFile $e")
-            throw e
+                s3clientExt.completeMultipartUpload(completeMultipartUploadRequest).await()
+            } catch (e: Exception) {
+                println(">>>>>>>>>> ERROR #3 - multipartUploadFile $e")
+                throw e
+            }
         }
     }
 
