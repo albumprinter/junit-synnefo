@@ -14,16 +14,13 @@ import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.core.retry.RetryPolicy
 import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
-import software.amazon.awssdk.core.sync.ResponseTransformer
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
 import software.amazon.awssdk.services.s3.S3AsyncClient
-import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.*
 import java.io.File
-import java.lang.Exception
 import java.net.URI
 import java.nio.file.Paths
 import java.util.*
@@ -56,8 +53,8 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
     private val installPhaseTemplate =
             "  install:\n" +
-            "    runtime-versions:\n" +
-            "%s\n"
+                    "    runtime-versions:\n" +
+                    "%s\n"
     // 5 spaces to indent the underlying items
 
     private val buildSpecTemplate = "version: 0.2\n" +
@@ -84,7 +81,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     internal data class Job(
             val runnerInfos: List<SynnefoRunnerInfo>,
             val notifier: RunNotifier,
-            val randomSeed : Long = System.currentTimeMillis()
+            val randomSeed: Long = System.currentTimeMillis()
     )
 
     internal data class ScheduledJob(val originalJob: Job, val buildId: String, val info: SynnefoRunnerInfo, val junitDescription: Description)
@@ -430,13 +427,11 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                         val data = AsyncRequestBody.fromBytes(it.second)
 
                         val etag = try {
-                        s3clientExt.uploadPart(uploadRequest, data).await().eTag()
-                    } catch (e: Exception) {
+                            s3clientExt.uploadPart(uploadRequest, data).await().eTag()
+                        } catch (e: Exception) {
                             println(">>>>>>>> ERROR #2 - uploadPart $e")
-
                             throw e
-                    }
-
+                        }
                         CompletedPart.builder().partNumber(it.first).eTag(etag).build()
                     }
 
@@ -456,7 +451,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         }
     }
 
-    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>, randomSeed : Long, installPhaseSection : String): String {
+    private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>, randomSeed: Long, installPhaseSection: String): String {
         val sb = StringBuilder()
         sb.appendWithEscaping("java")
         sb.appendWithEscaping("-cp")
