@@ -36,7 +36,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     // At this point the only way to use them is to use the environment variables
     private val s3: S3AsyncClient = S3AsyncClient
             .builder()
-            .httpClientBuilder { NettyNioAsyncHttpClient.builder().maxConcurrency(200).build() }
+            .httpClientBuilder { NettyNioAsyncHttpClient.builder().maxConcurrency(100).build() }
             .build()
 
     private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient
@@ -118,23 +118,28 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private suspend fun S3AsyncClient.deleteS3uploads(bucketName: String, prefix: String) {
-        if (prefix.isNullOrWhiteSpace())
-            throw SynnefoException("prefix can't be empty")
+        try {
+            if (prefix.isNullOrWhiteSpace())
+                throw SynnefoException("prefix can't be empty")
 
-        val listObjectsRequest = ListObjectsRequest
-                .builder()
-                .bucket(bucketName)
-                .prefix(prefix)
-                .build()
+            val listObjectsRequest = ListObjectsRequest
+                    .builder()
+                    .bucket(bucketName)
+                    .prefix(prefix)
+                    .build()
 
-        val listResponse = s3.listObjects(listObjectsRequest).await()
-        val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
-        val deleteObjectsRequest = DeleteObjectsRequest.builder()
-                .bucket(bucketName)
-                .delete { t -> t.objects(identifiers) }
-                .build()
+            val listResponse = s3.listObjects(listObjectsRequest).await()
+            val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
+            val deleteObjectsRequest = DeleteObjectsRequest.builder()
+                    .bucket(bucketName)
+                    .delete { t -> t.objects(identifiers) }
+                    .build()
 
-        this.deleteObjects(deleteObjectsRequest).await()
+            this.deleteObjects(deleteObjectsRequest).await()
+        } catch (e: Exception) {
+            println(">>>>>>>>> ERROR #1 - deleteS3uploads" + e.message)
+            throw e
+        }
     }
 
     private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>, retryConfiguration: Map<SynnefoProperties, RetryConfiguration>) {
@@ -248,17 +253,15 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .key(keyPath)
                 .build()!!
 
-        println(">>>>>>> GETTING OBJECT TO S3")
 
         try {
             val response = s3.getObject(getObjectRequest, AsyncResponseTransformer.toBytes()).await()
             ZipHelper.unzip(response.asByteArray(), targetDirectory)
         } catch (e: Exception) {
-            println(">>>>>>> EXCEPTION OCCURRED! ")
-            println(e)
+            println("ERROR #4 - getObject $e")
+            throw e
         }
 
-        println(">>>>>>> OBJECT RECEIVED FROM S3")
 
         s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
@@ -403,43 +406,54 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     }
 
     private suspend fun S3AsyncClient.multipartUploadFile(bucket: String, key: String, filePath: URI, partSizeMb: Int) {
-        val s3clientExt = this
-        val filteredKey = key.replace("//", "/")
+        try {
+            val s3clientExt = this
+            val filteredKey = key.replace("//", "/")
 
-        val createUploadRequest = CreateMultipartUploadRequest.builder()
-                .key(filteredKey)
-                .bucket(bucket)
-                .build()
+            val createUploadRequest = CreateMultipartUploadRequest.builder()
+                    .key(filteredKey)
+                    .bucket(bucket)
+                    .build()
 
-        val response = s3clientExt.createMultipartUpload(createUploadRequest).await()
+            val response = s3clientExt.createMultipartUpload(createUploadRequest).await()
 
-        val chunks = readFileChunks(filePath, partSizeMb).toList()
+            val chunks = readFileChunks(filePath, partSizeMb).toList()
 
-        val partETags =
-                chunks.map {
-                    val uploadRequest = UploadPartRequest.builder()
+            val partETags =
+                    chunks.map {
+                        val uploadRequest = UploadPartRequest.builder()
+                                .bucket(bucket)
+                                .key(filteredKey)
+                                .uploadId(response.uploadId())
+                                .partNumber(it.first)
+                                .build()
+                        val data = AsyncRequestBody.fromBytes(it.second)
+
+                        val etag = try {
+                        s3clientExt.uploadPart(uploadRequest, data).await().eTag()
+                    } catch (e: Exception) {
+                            println(">>>>>>>> ERROR #2 - uploadPart $e")
+
+                            throw e
+                    }
+
+                        CompletedPart.builder().partNumber(it.first).eTag(etag).build()
+                    }
+
+            val completedMultipartUpload = CompletedMultipartUpload.builder().parts(partETags)
+                    .build()
+            val completeMultipartUploadRequest =
+                    CompleteMultipartUploadRequest.builder()
                             .bucket(bucket)
                             .key(filteredKey)
                             .uploadId(response.uploadId())
-                            .partNumber(it.first)
+                            .multipartUpload(completedMultipartUpload)
                             .build()
-                    val data = AsyncRequestBody.fromBytes(it.second)
-
-                    val etag = s3clientExt.uploadPart(uploadRequest, data).await().eTag()
-
-                    CompletedPart.builder().partNumber(it.first).eTag(etag).build()
-                }
-
-        val completedMultipartUpload = CompletedMultipartUpload.builder().parts(partETags)
-                .build()
-        val completeMultipartUploadRequest =
-                CompleteMultipartUploadRequest.builder()
-                        .bucket(bucket)
-                        .key(filteredKey)
-                        .uploadId(response.uploadId())
-                        .multipartUpload(completedMultipartUpload)
-                        .build()
-        s3clientExt.completeMultipartUpload(completeMultipartUploadRequest).await()
+            s3clientExt.completeMultipartUpload(completeMultipartUploadRequest).await()
+        } catch (e: Exception) {
+            println(">>>>>>>>>> ERORR #3 - multipartUploadFile $e")
+            throw e
+        }
     }
 
     private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>, randomSeed : Long, installPhaseSection : String): String {
