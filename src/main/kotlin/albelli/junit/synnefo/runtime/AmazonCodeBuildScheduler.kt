@@ -240,7 +240,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
                 currentQueue.addAll(scheduledJobs)
                 println("started ${currentBatch.count()} jobs")
-                delay(2500)
+                delay(5000)
             }
 
             delay(2000)
