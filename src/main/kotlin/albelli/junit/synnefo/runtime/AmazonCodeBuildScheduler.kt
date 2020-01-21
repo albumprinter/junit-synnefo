@@ -404,7 +404,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
             return ScheduledJob(job, buildId, info, junitDescription)
         } catch (e: Exception) {
-            println(">>>>>>> ERROR #8 - startBuild $e")
+            println(">>>>>>> ERROR #8 - startBuild $e ${e.stackTrace}")
             throw e
         }
     }
