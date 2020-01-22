@@ -25,15 +25,29 @@ import java.net.URI
 import java.nio.file.Paths
 import java.util.*
 import kotlin.collections.HashMap
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
+import java.time.Duration
 
 internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
     // TODO
     // Should we have an option to use these clients with keys/secrets?
     // At this point the only way to use them is to use the environment variables
-    private val s3: S3AsyncClient = S3AsyncClient.builder().build()
+    private val s3: S3AsyncClient = S3AsyncClient
+            .builder()
+            .httpClientBuilder {
+                NettyNioAsyncHttpClient.builder()
+                        .maxConcurrency(100)
+                        .connectionMaxIdleTime(Duration.ofSeconds(5))
+                        .build() }
+            .build()
     private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient
             .builder()
+            .httpClientBuilder {
+                NettyNioAsyncHttpClient.builder()
+                        .maxConcurrency(100)
+                        .connectionMaxIdleTime(Duration.ofSeconds(5))
+                        .build() }
             .overrideConfiguration {
                 it.retryPolicy(codeBuildRetryPolicy())
             }
