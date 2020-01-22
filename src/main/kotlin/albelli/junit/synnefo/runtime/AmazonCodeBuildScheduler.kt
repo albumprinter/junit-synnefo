@@ -215,6 +215,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                         }
                     } catch (e: Exception) {
                         println(" >>>>>>>>> ERROR #5 - runAndWaitForJobs $e")
+                        e.printStackTrace()
                         throw e
                     }
                 }
@@ -240,7 +241,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
                 currentQueue.addAll(scheduledJobs)
                 println("started ${currentBatch.count()} jobs")
-                delay(5000)
+                delay(2500)
             }
 
             delay(2000)
@@ -267,6 +268,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 ZipHelper.unzip(response.asByteArray(), targetDirectory)
             } catch (e: Exception) {
                 println("ERROR #4 - getObject $e")
+                e.printStackTrace()
                 throw e
             }
         }
@@ -315,6 +317,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 return@coroutineScope response.projects().size == 1
             } catch (e: Exception) {
                 println(">>>>>> ERROR #6 - projectExists $e")
+                e.printStackTrace()
                 throw e
             }
         }
@@ -364,6 +367,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 codeBuild.createProject(createRequest).await()
             } catch (e: Exception) {
                 println(">>>>>>>>> ERROR # 7 - createCodeBuildProject $e")
+                e.printStackTrace()
                 throw e
             }
         }
@@ -405,6 +409,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             return ScheduledJob(job, buildId, info, junitDescription)
         } catch (e: Exception) {
             println(">>>>>>> ERROR #8 - startBuild $e ${e.stackTrace}")
+            e.printStackTrace()
             throw e
         }
     }
