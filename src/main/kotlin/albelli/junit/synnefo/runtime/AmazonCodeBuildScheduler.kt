@@ -23,6 +23,7 @@ import software.amazon.awssdk.services.s3.model.*
 import java.io.File
 import java.net.URI
 import java.nio.file.Paths
+import java.time.Duration
 import java.util.*
 import kotlin.collections.HashMap
 
@@ -33,11 +34,20 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     // At this point the only way to use them is to use the environment variables
     private val s3: S3AsyncClient = S3AsyncClient
             .builder()
-            .httpClientBuilder { NettyNioAsyncHttpClient.builder().maxConcurrency(100).build() }
+            .httpClientBuilder {
+                NettyNioAsyncHttpClient.builder()
+                        .maxConcurrency(100)
+                        .connectionMaxIdleTime(Duration.ofSeconds(5))
+                        .build() }
             .build()
 
     private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient
             .builder()
+            .httpClientBuilder {
+                NettyNioAsyncHttpClient.builder()
+                        .maxConcurrency(100)
+                        .connectionMaxIdleTime(Duration.ofSeconds(5))
+                        .build() }
             .overrideConfiguration {
                 it.retryPolicy(codeBuildRetryPolicy())
             }
