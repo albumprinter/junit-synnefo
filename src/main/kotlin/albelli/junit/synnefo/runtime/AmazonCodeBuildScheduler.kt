@@ -24,6 +24,7 @@ import software.amazon.awssdk.services.s3.model.*
 import java.io.File
 import java.net.URI
 import java.nio.file.Paths
+import java.time.Duration
 import java.util.*
 import kotlin.collections.HashMap
 
@@ -37,7 +38,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             .httpClientBuilder {
                 NettyNioAsyncHttpClient.builder()
                         .maxConcurrency(200)
-                        .sslProvider(SslProvider.OPENSSL)
                         .useIdleConnectionReaper(false)
                         .build() }
             .build()
@@ -47,11 +47,12 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             .httpClientBuilder {
                 NettyNioAsyncHttpClient.builder()
                         .maxConcurrency(200)
-                        .sslProvider(SslProvider.OPENSSL)
                         .useIdleConnectionReaper(false)
                         .build() }
             .overrideConfiguration {
                 it.retryPolicy(codeBuildRetryPolicy())
+                it.apiCallTimeout(Duration.ofSeconds(5))
+                it.apiCallAttemptTimeout(Duration.ofSeconds(5))
             }
             .build()
 
