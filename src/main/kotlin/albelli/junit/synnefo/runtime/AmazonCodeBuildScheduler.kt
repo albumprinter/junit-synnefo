@@ -38,6 +38,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             .httpClientBuilder {
                 NettyNioAsyncHttpClient.builder()
                         .maxConcurrency(200)
+                        .connectionMaxIdleTime(Duration.ofSeconds(90))
                         .useIdleConnectionReaper(false)
                         .build() }
             .build()
@@ -47,6 +48,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             .httpClientBuilder {
                 NettyNioAsyncHttpClient.builder()
                         .maxConcurrency(200)
+                        .connectionMaxIdleTime(Duration.ofSeconds(90))
                         .useIdleConnectionReaper(false)
                         .build() }
             .overrideConfiguration {
