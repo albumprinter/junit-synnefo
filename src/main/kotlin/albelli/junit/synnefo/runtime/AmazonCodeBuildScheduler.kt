@@ -4,6 +4,7 @@ import albelli.junit.synnefo.runtime.exceptions.SynnefoException
 import albelli.junit.synnefo.runtime.exceptions.SynnefoTestFailureException
 import albelli.junit.synnefo.runtime.exceptions.SynnefoTestStoppedException
 import albelli.junit.synnefo.runtime.exceptions.SynnefoTestTimedOutException
+import io.netty.handler.ssl.SslProvider
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
 import org.junit.runner.Description
@@ -14,7 +15,6 @@ import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.core.retry.RetryPolicy
 import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
-import software.amazon.awssdk.http.Protocol
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
@@ -24,7 +24,6 @@ import software.amazon.awssdk.services.s3.model.*
 import java.io.File
 import java.net.URI
 import java.nio.file.Paths
-import java.time.Duration
 import java.util.*
 import kotlin.collections.HashMap
 
@@ -38,6 +37,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             .httpClientBuilder {
                 NettyNioAsyncHttpClient.builder()
                         .maxConcurrency(200)
+                        .sslProvider(SslProvider.OPENSSL)
                         .useIdleConnectionReaper(false)
                         .build() }
             .build()
@@ -47,6 +47,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             .httpClientBuilder {
                 NettyNioAsyncHttpClient.builder()
                         .maxConcurrency(200)
+                        .sslProvider(SslProvider.OPENSSL)
                         .useIdleConnectionReaper(false)
                         .build() }
             .overrideConfiguration {
