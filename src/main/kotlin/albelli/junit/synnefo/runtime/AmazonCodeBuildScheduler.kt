@@ -14,6 +14,7 @@ import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.core.retry.RetryPolicy
 import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
+import software.amazon.awssdk.http.Protocol
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
@@ -37,6 +38,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             .httpClientBuilder {
                 NettyNioAsyncHttpClient.builder()
                         .maxConcurrency(100)
+                        .protocol(Protocol.HTTP2)
                         .connectionMaxIdleTime(Duration.ofSeconds(5))
                         .build() }
             .build()
@@ -46,6 +48,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
             .httpClientBuilder {
                 NettyNioAsyncHttpClient.builder()
                         .maxConcurrency(100)
+                        .protocol(Protocol.HTTP2)
                         .connectionMaxIdleTime(Duration.ofSeconds(5))
                         .build() }
             .overrideConfiguration {
