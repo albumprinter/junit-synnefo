@@ -139,7 +139,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
         this.deleteObjects(deleteObjectsRequest).await()
     }
 
-    private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>, retryConfiguration: Map<SynnefoProperties, RetryConfiguration>) = coroutineScope {
+    private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>, retryConfiguration: Map<SynnefoProperties, RetryConfiguration>) {
             val triesPerTest: MutableMap<String, Int> = HashMap()
             val currentQueue = LinkedList<ScheduledJob>()
             val backlog = job.runnerInfos.toMutableList()
@@ -233,7 +233,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
             }
         }
 
-    private suspend fun collectArtifact(result: ScheduledJob) = coroutineScope {
+    private suspend fun collectArtifact(result: ScheduledJob) {
         val targetDirectory = result.info.synnefoOptions.reportTargetDir
 
         val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
@@ -331,7 +331,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
         codeBuild.createProject(createRequest).await()
     }
 
-    private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo, triggerTestStarted: Boolean): ScheduledJob = coroutineScope {
+    private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo, triggerTestStarted: Boolean): ScheduledJob {
         val codeBuildRuntimes = settings.codeBuildRunTimeVersions.map { String.format("     %s", it.trim()) }
         val installPhaseSection = if (codeBuildRuntimes.isEmpty()) "" else String.format(installPhaseTemplate, codeBuildRuntimes.joinToString())
 
@@ -363,7 +363,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
         if (triggerTestStarted)
             job.notifier.fireTestStarted(junitDescription)
 
-        return@coroutineScope ScheduledJob(job, buildId, info, junitDescription)
+        return ScheduledJob(job, buildId, info, junitDescription)
     }
 
     private fun readFileChunks(file: URI, partSizeMb: Int) = sequence {
