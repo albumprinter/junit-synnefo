@@ -10,6 +10,7 @@ import org.junit.runner.Description
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
 import software.amazon.awssdk.core.async.AsyncRequestBody
+import software.amazon.awssdk.core.client.config.SdkAdvancedAsyncClientOption
 import software.amazon.awssdk.core.retry.RetryPolicy
 import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
@@ -21,9 +22,11 @@ import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.*
 import java.io.File
+import java.lang.Runnable
 import java.net.URI
 import java.nio.file.Paths
 import java.util.*
+import java.util.concurrent.Executor
 import kotlin.collections.HashMap
 
 internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : AutoCloseable{
@@ -31,9 +34,19 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
     // TODO
     // Should we have an option to use these clients with keys/secrets?
     // At this point the only way to use them is to use the environment variables
-    private val s3: S3AsyncClient = S3AsyncClient.builder().build()
+    private val s3: S3AsyncClient = S3AsyncClient
+            .builder()
+            .asyncConfiguration {
+                it.advancedOption(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR,
+                        Executor { command -> command.run() })
+            }
+            .build()
     private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient
             .builder()
+            .asyncConfiguration {
+                it.advancedOption(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR,
+                        Executor { command -> command.run() })
+            }
             .overrideConfiguration {
                 it.retryPolicy(codeBuildRetryPolicy())
             }
@@ -131,104 +144,103 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
     }
 
     private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>, retryConfiguration: Map<SynnefoProperties, RetryConfiguration>) = coroutineScope {
-        val triesPerTest: MutableMap<String, Int> = HashMap()
-        val currentQueue = LinkedList<ScheduledJob>()
-        val backlog = job.runnerInfos.toMutableList()
-        val codeBuildRequestLimit = 100
-        val s3Tasks = ArrayList<Deferred<Unit>>()
-        val notificationTicker = NotificationTicker(15) { println("current running total: ${currentQueue.size}; backlog: ${backlog.size}") }
+            val triesPerTest: MutableMap<String, Int> = HashMap()
+            val currentQueue = LinkedList<ScheduledJob>()
+            val backlog = job.runnerInfos.toMutableList()
+            val codeBuildRequestLimit = 100
+            val s3Tasks = ArrayList<Deferred<Unit>>()
+            val notificationTicker = NotificationTicker(15) { println("current running total: ${currentQueue.size}; backlog: ${backlog.size}") }
 
-        println("Going to run ${backlog.count()} jobs")
+            println("Going to run ${backlog.count()} jobs")
 
-        while (backlog.size > 0 || currentQueue.size > 0) {
+            while (backlog.size > 0 || currentQueue.size > 0) {
 
-            if (!currentQueue.isEmpty()) {
-                val buildIdToJobMap: Map<String, ScheduledJob> = currentQueue.associateBy({ it.buildId }, { it })
-                val dequeuedIds = currentQueue.dequeueUpTo(codeBuildRequestLimit).map { it.buildId }
+                if (!currentQueue.isEmpty()) {
+                    val buildIdToJobMap: Map<String, ScheduledJob> = currentQueue.associateBy({ it.buildId }, { it })
+                    val dequeuedIds = currentQueue.dequeueUpTo(codeBuildRequestLimit).map { it.buildId }
 
-                val request = BatchGetBuildsRequest
-                        .builder()
-                        .ids(dequeuedIds)
-                        .build()
-                val response = codeBuild.batchGetBuilds(request).await()
+                    val request = BatchGetBuildsRequest
+                            .builder()
+                            .ids(dequeuedIds)
+                            .build()
+                    val response = codeBuild.batchGetBuilds(request).await()
+                    for (build in response.builds()) {
+                        val originalJob = buildIdToJobMap.getValue(build.id())
 
-                for (build in response.builds()) {
-                    val originalJob = buildIdToJobMap.getValue(build.id())
-
-                    when (build.buildStatus()!!) {
-                        STOPPED -> {
-                            println("build ${originalJob.info.cucumberFeatureLocation} was stopped")
-                            job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestStoppedException("Test ${originalJob.info.cucumberFeatureLocation}")))
-                        }
-
-                        TIMED_OUT -> {
-                            println("build ${originalJob.info.cucumberFeatureLocation} timed out")
-                            job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestTimedOutException("Test ${originalJob.info.cucumberFeatureLocation}")))
-                        }
-
-                        FAILED, FAULT -> run {
-                            println("build ${originalJob.info.cucumberFeatureLocation} failed")
-                            val thisTestRetryConfiguration = retryConfiguration[originalJob.info.synnefoOptions]
-                                    ?: error("Failed to get the retry configuration for ${originalJob.info.cucumberFeatureLocation}")
-                            if (thisTestRetryConfiguration.maxRetries > 0) {
-                                println("It's still possible to retry with ${thisTestRetryConfiguration.maxRetries} total retries left")
-                                val newRetries = triesPerTest.getOrDefault(originalJob.info.cucumberFeatureLocation, 0) + 1
-                                if (newRetries <= thisTestRetryConfiguration.retriesPerTest) {
-                                    println("Adding the test back to the backlog.")
-                                    triesPerTest[originalJob.info.cucumberFeatureLocation] = newRetries
-                                    thisTestRetryConfiguration.maxRetries--
-                                    backlog.add(originalJob.info)
-                                    return@run
-                                }
-                                println("But this test had exhausted the maximum retries per test")
+                        when (build.buildStatus()!!) {
+                            STOPPED -> {
+                                println("build ${originalJob.info.cucumberFeatureLocation} was stopped")
+                                job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestStoppedException("Test ${originalJob.info.cucumberFeatureLocation}")))
                             }
 
-                            job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
-                            s3Tasks.add(async { collectArtifact(originalJob) })
+                            TIMED_OUT -> {
+                                println("build ${originalJob.info.cucumberFeatureLocation} timed out")
+                                job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestTimedOutException("Test ${originalJob.info.cucumberFeatureLocation}")))
+                            }
+
+                            FAILED, FAULT -> run {
+                                println("build ${originalJob.info.cucumberFeatureLocation} failed")
+                                val thisTestRetryConfiguration = retryConfiguration[originalJob.info.synnefoOptions]
+                                        ?: error("Failed to get the retry configuration for ${originalJob.info.cucumberFeatureLocation}")
+                                if (thisTestRetryConfiguration.maxRetries > 0) {
+                                    println("It's still possible to retry with ${thisTestRetryConfiguration.maxRetries} total retries left")
+                                    val newRetries = triesPerTest.getOrDefault(originalJob.info.cucumberFeatureLocation, 0) + 1
+                                    if (newRetries <= thisTestRetryConfiguration.retriesPerTest) {
+                                        println("Adding the test back to the backlog.")
+                                        triesPerTest[originalJob.info.cucumberFeatureLocation] = newRetries
+                                        thisTestRetryConfiguration.maxRetries--
+                                        backlog.add(originalJob.info)
+                                        return@run
+                                    }
+                                    println("But this test had exhausted the maximum retries per test")
+                                }
+
+                                job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
+                                s3Tasks.add(async { collectArtifact(originalJob) })
+                            }
+
+                            SUCCEEDED -> {
+                                println("build ${originalJob.info.cucumberFeatureLocation} succeeded")
+                                job.notifier.fireTestFinished(originalJob.junitDescription)
+                                s3Tasks.add(async{ collectArtifact(originalJob) })
+                            }
+
+                            IN_PROGRESS -> currentQueue.addLast(originalJob)
+
+                            UNKNOWN_TO_SDK_VERSION -> job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Received a UNKNOWN_TO_SDK_VERSION enum! This should not have happened really.")))
                         }
-
-                        SUCCEEDED -> {
-                            println("build ${originalJob.info.cucumberFeatureLocation} succeeded")
-                            job.notifier.fireTestFinished(originalJob.junitDescription)
-                            s3Tasks.add(async { collectArtifact(originalJob) })
-                        }
-
-                        IN_PROGRESS -> currentQueue.addLast(originalJob)
-
-                        UNKNOWN_TO_SDK_VERSION -> job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Received a UNKNOWN_TO_SDK_VERSION enum! This should not have happened really.")))
                     }
                 }
+
+                val availableSlots = threads - currentQueue.size
+                val jobsToSpawn = backlog.dequeueUpTo(availableSlots)
+
+                val rate = 25
+                while (jobsToSpawn.isNotEmpty()) {
+                    val currentBatch = jobsToSpawn.dequeueUpTo(rate)
+
+                    val scheduledJobs = currentBatch
+                            .map {
+
+                                val settings = it.synnefoOptions
+                                val location = sourceLocations[settings]
+                                        ?: error("For whatever reason we don't have the source location for this setting")
+                                val shouldTriggerNotifier = !triesPerTest.containsKey(it.cucumberFeatureLocation)
+                                async{ startBuild(job, settings, location, it, shouldTriggerNotifier) }
+                            }
+                            .map { it.await() }
+
+                    currentQueue.addAll(scheduledJobs)
+                    println("started ${currentBatch.count()} jobs")
+                    delay(2500)
+                }
+
+                delay(2000)
+                notificationTicker.tick()
             }
 
-            val availableSlots = threads - currentQueue.size
-            val jobsToSpawn = backlog.dequeueUpTo(availableSlots)
-
-            val rate = 25
-            while (jobsToSpawn.isNotEmpty()) {
-                val currentBatch = jobsToSpawn.dequeueUpTo(rate)
-
-                val scheduledJobs = currentBatch
-                        .map {
-
-                            val settings = it.synnefoOptions
-                            val location = sourceLocations[settings]
-                                    ?: error("For whatever reason we don't have the source location for this setting")
-                            val shouldTriggerNotifier = !triesPerTest.containsKey(it.cucumberFeatureLocation)
-                            async { startBuild(job, settings, location, it, shouldTriggerNotifier) }
-                        }
-                        .map { it.await() }
-
-                currentQueue.addAll(scheduledJobs)
-                println("started ${currentBatch.count()} jobs")
-                delay(2500)
-            }
-
-            delay(2000)
-            notificationTicker.tick()
+            s3Tasks.awaitAll()
         }
-
-        s3Tasks.awaitAll()
-    }
 
     private suspend fun collectArtifact(result: ScheduledJob) {
         val targetDirectory = result.info.synnefoOptions.reportTargetDir
