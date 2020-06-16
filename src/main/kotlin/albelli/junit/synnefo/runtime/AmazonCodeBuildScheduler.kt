@@ -15,7 +15,6 @@ import software.amazon.awssdk.core.client.config.SdkAdvancedAsyncClientOption
 import software.amazon.awssdk.core.retry.RetryPolicy
 import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
-import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
@@ -145,7 +144,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
             val currentQueue = LinkedList<ScheduledJob>()
             val backlog = job.runnerInfos.toMutableList()
             val codeBuildRequestLimit = 100
-            val s3Tasks = ArrayList<Deferred<Unit>>()
             val notificationTicker = NotificationTicker(15) { println("current running total: ${currentQueue.size}; backlog: ${backlog.size}") }
 
             println("Going to run ${backlog.count()} jobs")
@@ -193,13 +191,13 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
                                 }
 
                                 job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
-                                s3Tasks.add(async { collectArtifact(originalJob) })
+                                collectArtifact(originalJob)
                             }
 
                             SUCCEEDED -> {
                                 println("build ${originalJob.info.cucumberFeatureLocation} succeeded")
                                 job.notifier.fireTestFinished(originalJob.junitDescription)
-                                s3Tasks.add(async{ collectArtifact(originalJob) })
+                                collectArtifact(originalJob)
                             }
 
                             IN_PROGRESS -> currentQueue.addLast(originalJob)
@@ -207,7 +205,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
                             UNKNOWN_TO_SDK_VERSION -> job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Received a UNKNOWN_TO_SDK_VERSION enum! This should not have happened really.")))
                         }
                     }
-                    delay((1000..5000).random().toLong())
                 }
 
                 val availableSlots = threads - currentQueue.size
@@ -224,9 +221,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
                                 val location = sourceLocations[settings]
                                         ?: error("For whatever reason we don't have the source location for this setting")
                                 val shouldTriggerNotifier = !triesPerTest.containsKey(it.cucumberFeatureLocation)
-                                async{ startBuild(job, settings, location, it, shouldTriggerNotifier) }
-                            }
-                            .map { it.await() }
+                                startBuild(job, settings, location, it, shouldTriggerNotifier) }
 
                     currentQueue.addAll(scheduledJobs)
                     println("started ${currentBatch.count()} jobs")
@@ -236,11 +231,9 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
                 delay(2000)
                 notificationTicker.tick()
             }
-
-            s3Tasks.awaitAll()
         }
 
-    private suspend fun collectArtifact(result: ScheduledJob) {
+    private suspend fun collectArtifact(result: ScheduledJob) = coroutineScope {
         val targetDirectory = result.info.synnefoOptions.reportTargetDir
 
         val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
@@ -258,7 +251,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
 
-    private suspend fun uploadToS3AndGetSourcePath(settings: SynnefoProperties): String {
+    private suspend fun uploadToS3AndGetSourcePath(settings: SynnefoProperties): String{
         println("uploadToS3AndGetSourcePath")
 
         val targetDirectory = settings.bucketSourceFolder + UUID.randomUUID() + "/"
@@ -338,7 +331,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
         codeBuild.createProject(createRequest).await()
     }
 
-    private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo, triggerTestStarted: Boolean): ScheduledJob {
+    private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo, triggerTestStarted: Boolean): ScheduledJob = coroutineScope {
         val codeBuildRuntimes = settings.codeBuildRunTimeVersions.map { String.format("     %s", it.trim()) }
         val installPhaseSection = if (codeBuildRuntimes.isEmpty()) "" else String.format(installPhaseTemplate, codeBuildRuntimes.joinToString())
 
@@ -370,7 +363,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
         if (triggerTestStarted)
             job.notifier.fireTestStarted(junitDescription)
 
-        return ScheduledJob(job, buildId, info, junitDescription)
+        return@coroutineScope ScheduledJob(job, buildId, info, junitDescription)
     }
 
     private fun readFileChunks(file: URI, partSizeMb: Int) = sequence {
