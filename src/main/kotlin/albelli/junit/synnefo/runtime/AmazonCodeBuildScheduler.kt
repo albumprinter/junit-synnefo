@@ -6,6 +6,7 @@ import albelli.junit.synnefo.runtime.exceptions.SynnefoTestStoppedException
 import albelli.junit.synnefo.runtime.exceptions.SynnefoTestTimedOutException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.future.await
+import org.intellij.lang.annotations.Flow
 import org.junit.runner.Description
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
@@ -37,6 +38,9 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
                 it.advancedOption(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR,
                         Executor { command -> command.run()})
             }
+            .overrideConfiguration {
+                it.retryPolicy(retryPolicy())
+            }
             .build()
     private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient
             .builder()
@@ -45,13 +49,14 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
                         Executor { command -> command.run() })
             }
             .overrideConfiguration {
-                it.retryPolicy(codeBuildRetryPolicy())
+                it.retryPolicy(retryPolicy())
             }
             .build()
 
-    private fun codeBuildRetryPolicy(): RetryPolicy {
+    private fun retryPolicy(): RetryPolicy {
         return RetryPolicy
                 .builder()
+                .numRetries(5)
                 .retryCondition { RetryUtils.isServiceException(it.exception()) }
                 .backoffStrategy(BackoffStrategy.defaultThrottlingStrategy())
                 .build()
@@ -233,7 +238,8 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
             }
         }
 
-    private suspend fun collectArtifact(result: ScheduledJob) {
+    private suspend fun collectArtifact(result: ScheduledJob)
+    {
         val targetDirectory = result.info.synnefoOptions.reportTargetDir
 
         val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
