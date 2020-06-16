@@ -38,22 +38,12 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
                 it.advancedOption(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR,
                         Executor { command -> command.run()})
             }
-            .httpClientBuilder {
-                NettyNioAsyncHttpClient.builder()
-                        .useIdleConnectionReaper(false)
-                        .build()
-            }
             .build()
     private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient
             .builder()
             .asyncConfiguration {
                 it.advancedOption(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR,
                         Executor { command -> command.run() })
-            }
-            .httpClientBuilder {
-                NettyNioAsyncHttpClient.builder()
-                        .useIdleConnectionReaper(false)
-                        .build()
             }
             .overrideConfiguration {
                 it.retryPolicy(codeBuildRetryPolicy())
@@ -217,6 +207,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
                             UNKNOWN_TO_SDK_VERSION -> job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Received a UNKNOWN_TO_SDK_VERSION enum! This should not have happened really.")))
                         }
                     }
+                    delay((1000..5000).random().toLong())
                 }
 
                 val availableSlots = threads - currentQueue.size
