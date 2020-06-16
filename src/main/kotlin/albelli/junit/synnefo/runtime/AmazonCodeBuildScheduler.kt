@@ -15,22 +15,18 @@ import software.amazon.awssdk.core.client.config.SdkAdvancedAsyncClientOption
 import software.amazon.awssdk.core.retry.RetryPolicy
 import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
-import software.amazon.awssdk.core.sync.ResponseTransformer
-import software.amazon.awssdk.core.sync.ResponseTransformer.toInputStream
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
 import software.amazon.awssdk.services.s3.S3AsyncClient
-import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.*
 import java.io.File
-import java.lang.Runnable
 import java.net.URI
 import java.nio.file.Paths
 import java.util.*
 import java.util.concurrent.Executor
 import kotlin.collections.HashMap
-
 internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : AutoCloseable{
 
     // TODO
@@ -40,7 +36,12 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
             .builder()
             .asyncConfiguration {
                 it.advancedOption(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR,
-                        Executor { command -> command.run() })
+                        Executor { command -> command.run()})
+            }
+            .httpClientBuilder {
+                NettyNioAsyncHttpClient.builder()
+                        .useIdleConnectionReaper(false)
+                        .build()
             }
             .build()
     private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient
@@ -48,6 +49,11 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
             .asyncConfiguration {
                 it.advancedOption(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR,
                         Executor { command -> command.run() })
+            }
+            .httpClientBuilder {
+                NettyNioAsyncHttpClient.builder()
+                        .useIdleConnectionReaper(false)
+                        .build()
             }
             .overrideConfiguration {
                 it.retryPolicy(codeBuildRetryPolicy())
@@ -141,7 +147,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
                 .bucket(bucketName)
                 .delete { t -> t.objects(identifiers) }
                 .build()
-
         this.deleteObjects(deleteObjectsRequest).await()
     }
 
