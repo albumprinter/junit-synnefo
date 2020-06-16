@@ -5,10 +5,7 @@ import org.junit.runner.Description
 import org.junit.runner.Result
 import org.junit.runner.notification.RunNotifier
 
-internal class SynnefoRunner(classLoader: ClassLoader, private val notifier: RunNotifier) {
-
-    private val scheduler: AmazonCodeBuildScheduler = AmazonCodeBuildScheduler(classLoader)
-
+internal class SynnefoRunner(private val classLoader: ClassLoader, private val notifier: RunNotifier) {
     fun run(runnerInfos: List<SynnefoRunnerInfo>) {
         val result = Result()
         notifier.fireTestRunStarted(Description.createSuiteDescription("Started the tests"))
@@ -20,7 +17,8 @@ internal class SynnefoRunner(classLoader: ClassLoader, private val notifier: Run
         job.notifier.addFirstListener(result.createListener())
 
         runBlocking {
-            scheduler.scheduleAndWait(job)
+            AmazonCodeBuildScheduler(classLoader)
+                    .use { s -> s.scheduleAndWait(job) }
         }
         notifier.fireTestRunFinished(result)
     }

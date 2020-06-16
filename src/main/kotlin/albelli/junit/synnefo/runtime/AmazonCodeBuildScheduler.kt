@@ -26,7 +26,7 @@ import java.nio.file.Paths
 import java.util.*
 import kotlin.collections.HashMap
 
-internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
+internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : AutoCloseable{
 
     // TODO
     // Should we have an option to use these clients with keys/secrets?
@@ -130,7 +130,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         this.deleteObjects(deleteObjectsRequest).await()
     }
 
-    private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>, retryConfiguration: Map<SynnefoProperties, RetryConfiguration>) {
+    private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>, retryConfiguration: Map<SynnefoProperties, RetryConfiguration>) = coroutineScope {
         val triesPerTest: MutableMap<String, Int> = HashMap()
         val currentQueue = LinkedList<ScheduledJob>()
         val backlog = job.runnerInfos.toMutableList()
@@ -184,13 +184,13 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                             }
 
                             job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
-                            s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                            s3Tasks.add(async { collectArtifact(originalJob) })
                         }
 
                         SUCCEEDED -> {
                             println("build ${originalJob.info.cucumberFeatureLocation} succeeded")
                             job.notifier.fireTestFinished(originalJob.junitDescription)
-                            s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                            s3Tasks.add(async { collectArtifact(originalJob) })
                         }
 
                         IN_PROGRESS -> currentQueue.addLast(originalJob)
@@ -214,7 +214,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                             val location = sourceLocations[settings]
                                     ?: error("For whatever reason we don't have the source location for this setting")
                             val shouldTriggerNotifier = !triesPerTest.containsKey(it.cucumberFeatureLocation)
-                            GlobalScope.async { startBuild(job, settings, location, it, shouldTriggerNotifier) }
+                            async { startBuild(job, settings, location, it, shouldTriggerNotifier) }
                         }
                         .map { it.await() }
 
@@ -481,5 +481,10 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 tickFun()
             }
         }
+    }
+
+    override fun close() {
+        codeBuild.close()
+        s3.close()
     }
 }
