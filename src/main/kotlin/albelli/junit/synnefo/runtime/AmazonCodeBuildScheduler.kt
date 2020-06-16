@@ -10,11 +10,13 @@ import org.junit.runner.Description
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
 import software.amazon.awssdk.core.async.AsyncRequestBody
+import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.core.client.config.SdkAdvancedAsyncClientOption
 import software.amazon.awssdk.core.retry.RetryPolicy
 import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
 import software.amazon.awssdk.core.sync.ResponseTransformer
+import software.amazon.awssdk.core.sync.ResponseTransformer.toInputStream
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
@@ -252,16 +254,10 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
                 .bucket(result.info.synnefoOptions.bucketName)
                 .key(keyPath)
                 .build()!!
+        val response = s3.getObject(getObjectRequest, AsyncResponseTransformer.toBytes())
+                .await()
 
-        // TODO:
-        // Use the async client from above
-        // Once the buggy S3 client is fixed by Amazon
-        val client = S3Client
-                .builder()
-                .build()
-        val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
-
-        ZipHelper.unzip(response, targetDirectory)
+        ZipHelper.unzip(response.asInputStream(), targetDirectory)
         s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
