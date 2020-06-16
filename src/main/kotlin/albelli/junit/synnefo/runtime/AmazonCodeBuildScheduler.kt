@@ -13,9 +13,11 @@ import org.junit.runner.notification.RunNotifier
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.async.AsyncResponseTransformer
 import software.amazon.awssdk.core.client.config.SdkAdvancedAsyncClientOption
+import software.amazon.awssdk.core.exception.SdkException
 import software.amazon.awssdk.core.retry.RetryPolicy
 import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
 import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
@@ -24,6 +26,7 @@ import software.amazon.awssdk.services.s3.model.*
 import java.io.File
 import java.net.URI
 import java.nio.file.Paths
+import java.time.Duration
 import java.util.*
 import java.util.concurrent.Executor
 import kotlin.collections.HashMap
@@ -37,6 +40,14 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
             .asyncConfiguration {
                 it.advancedOption(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR,
                         Executor { command -> command.run()})
+            }
+            .httpClientBuilder{
+                NettyNioAsyncHttpClient.builder()
+                        .connectionMaxIdleTime(Duration.ofSeconds(5))
+                        .maxConcurrency(100)
+                        .writeTimeout(Duration.ofSeconds(100))
+                        .readTimeout(Duration.ofSeconds(100))
+                        .build()
             }
             .overrideConfiguration {
                 it.retryPolicy(retryPolicy())
@@ -56,8 +67,8 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) : 
     private fun retryPolicy(): RetryPolicy {
         return RetryPolicy
                 .builder()
-                .numRetries(5)
-                .retryCondition { RetryUtils.isServiceException(it.exception()) }
+                .numRetries(10)
+                .retryCondition { it.exception() is SdkException }
                 .backoffStrategy(BackoffStrategy.defaultThrottlingStrategy())
                 .build()
     }
