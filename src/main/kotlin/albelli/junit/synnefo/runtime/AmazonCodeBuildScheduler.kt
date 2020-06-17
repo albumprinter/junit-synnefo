@@ -5,22 +5,21 @@ import albelli.junit.synnefo.runtime.exceptions.SynnefoTestFailureException
 import albelli.junit.synnefo.runtime.exceptions.SynnefoTestStoppedException
 import albelli.junit.synnefo.runtime.exceptions.SynnefoTestTimedOutException
 import kotlinx.coroutines.*
-import kotlinx.coroutines.future.await
 import org.junit.runner.Description
 import org.junit.runner.notification.Failure
 import org.junit.runner.notification.RunNotifier
-import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.retry.RetryPolicy
 import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
+import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.core.sync.ResponseTransformer
-import software.amazon.awssdk.services.codebuild.CodeBuildAsyncClient
+import software.amazon.awssdk.services.codebuild.CodeBuildClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
-import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.*
 import java.io.File
+import java.lang.Exception
 import java.net.URI
 import java.nio.file.Paths
 import java.util.*
@@ -31,17 +30,20 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     // TODO
     // Should we have an option to use these clients with keys/secrets?
     // At this point the only way to use them is to use the environment variables
-    private val s3: S3AsyncClient = S3AsyncClient.builder().build()
-    private val codeBuild: CodeBuildAsyncClient = CodeBuildAsyncClient
+    private val s3: S3Client = S3Client
+            .builder()
+            .build()
+    private val codeBuild: CodeBuildClient = CodeBuildClient
             .builder()
             .overrideConfiguration {
-                it.retryPolicy(codeBuildRetryPolicy())
+                it.retryPolicy(retryPolicy())
             }
             .build()
 
-    private fun codeBuildRetryPolicy(): RetryPolicy {
+    private fun retryPolicy(): RetryPolicy {
         return RetryPolicy
                 .builder()
+                .numRetries(5)
                 .retryCondition { RetryUtils.isServiceException(it.exception()) }
                 .backoffStrategy(BackoffStrategy.defaultThrottlingStrategy())
                 .build()
@@ -110,7 +112,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         }
     }
 
-    private suspend fun S3AsyncClient.deleteS3uploads(bucketName: String, prefix: String) {
+    private suspend fun S3Client.deleteS3uploads(bucketName: String, prefix: String) = withContext(Dispatchers.IO){
         if (prefix.isNullOrWhiteSpace())
             throw SynnefoException("prefix can't be empty")
 
@@ -120,22 +122,22 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .prefix(prefix)
                 .build()
 
-        val listResponse = s3.listObjects(listObjectsRequest).await()
+        val listResponse =  s3.listObjects(listObjectsRequest)
         val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
         val deleteObjectsRequest = DeleteObjectsRequest.builder()
                 .bucket(bucketName)
                 .delete { t -> t.objects(identifiers) }
                 .build()
 
-        this.deleteObjects(deleteObjectsRequest).await()
+        this@deleteS3uploads.deleteObjects(deleteObjectsRequest)
     }
 
-    private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>, retryConfiguration: Map<SynnefoProperties, RetryConfiguration>) {
+    private suspend fun runAndWaitForJobs(job: Job, threads: Int, sourceLocations: Map<SynnefoProperties, String>, retryConfiguration: Map<SynnefoProperties, RetryConfiguration>) = coroutineScope {
         val triesPerTest: MutableMap<String, Int> = HashMap()
         val currentQueue = LinkedList<ScheduledJob>()
         val backlog = job.runnerInfos.toMutableList()
         val codeBuildRequestLimit = 100
-        val s3Tasks = ArrayList<Deferred<Unit>>()
+        val s3Tasks = ArrayList<kotlinx.coroutines.Job>()
         val notificationTicker = NotificationTicker(15) { println("current running total: ${currentQueue.size}; backlog: ${backlog.size}") }
 
         println("Going to run ${backlog.count()} jobs")
@@ -150,7 +152,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                         .builder()
                         .ids(dequeuedIds)
                         .build()
-                val response = codeBuild.batchGetBuilds(request).await()
+                val response = withContext(Dispatchers.IO){ codeBuild.batchGetBuilds(request)}
 
                 for (build in response.builds()) {
                     val originalJob = buildIdToJobMap.getValue(build.id())
@@ -184,13 +186,14 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                             }
 
                             job.notifier.fireTestFailure(Failure(originalJob.junitDescription, SynnefoTestFailureException("Test ${originalJob.info.cucumberFeatureLocation}")))
-                            s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                            s3Tasks.add(launch { collectArtifact(originalJob) }
+                            )
                         }
 
                         SUCCEEDED -> {
                             println("build ${originalJob.info.cucumberFeatureLocation} succeeded")
                             job.notifier.fireTestFinished(originalJob.junitDescription)
-                            s3Tasks.add(GlobalScope.async { collectArtifact(originalJob) })
+                            s3Tasks.add(launch { collectArtifact(originalJob) })
                         }
 
                         IN_PROGRESS -> currentQueue.addLast(originalJob)
@@ -214,40 +217,30 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                             val location = sourceLocations[settings]
                                     ?: error("For whatever reason we don't have the source location for this setting")
                             val shouldTriggerNotifier = !triesPerTest.containsKey(it.cucumberFeatureLocation)
-                            GlobalScope.async { startBuild(job, settings, location, it, shouldTriggerNotifier) }
+                            async { startBuild(job, settings, location, it, shouldTriggerNotifier) }
                         }
                         .map { it.await() }
-
                 currentQueue.addAll(scheduledJobs)
                 println("started ${currentBatch.count()} jobs")
                 delay(2500)
             }
-
             delay(2000)
             notificationTicker.tick()
         }
-
-        s3Tasks.awaitAll()
+        s3Tasks.joinAll()
     }
 
-    private suspend fun collectArtifact(result: ScheduledJob) {
+    private suspend fun collectArtifact(result: ScheduledJob) = withContext(Dispatchers.IO) {
         val targetDirectory = result.info.synnefoOptions.reportTargetDir
 
         val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
         val keyPath = "${result.info.synnefoOptions.bucketOutputFolder}$buildId/${result.info.synnefoOptions.outputFileName}"
-
         val getObjectRequest = GetObjectRequest.builder()
                 .bucket(result.info.synnefoOptions.bucketName)
                 .key(keyPath)
                 .build()!!
 
-        // TODO:
-        // Use the async client from above
-        // Once the buggy S3 client is fixed by Amazon
-        val client = S3Client
-                .builder()
-                .build()
-        val response = client.getObject(getObjectRequest, ResponseTransformer.toInputStream())
+        val response = s3.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
         ZipHelper.unzip(response, targetDirectory)
         s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
@@ -282,17 +275,17 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
         createCodeBuildProject(settings)
     }
 
-    private suspend fun projectExists(projectName: String?): Boolean {
+    private suspend fun projectExists(projectName: String?): Boolean = withContext(Dispatchers.IO) {
         val batchGetProjectsRequest = BatchGetProjectsRequest
                 .builder()
                 .names(projectName)
                 .build()
 
-        val response = codeBuild.batchGetProjects(batchGetProjectsRequest).await()
-        return response.projects().size == 1
+        val response = codeBuild.batchGetProjects(batchGetProjectsRequest)
+        return@withContext response.projects().size == 1
     }
 
-    private suspend fun createCodeBuildProject(settings: SynnefoProperties) {
+    private suspend fun createCodeBuildProject(settings: SynnefoProperties) = withContext(Dispatchers.IO) {
         val sourceLocation = settings.bucketName + "/" + settings.bucketSourceFolder
 
         val createRequest = CreateProjectRequest
@@ -331,10 +324,10 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 }
                 .build()
 
-        codeBuild.createProject(createRequest).await()
+        codeBuild.createProject(createRequest)
     }
 
-    private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo, triggerTestStarted: Boolean): ScheduledJob {
+    private suspend fun startBuild(job: Job, settings: SynnefoProperties, sourceLocation: String, info: SynnefoRunnerInfo, triggerTestStarted: Boolean): ScheduledJob = withContext(Dispatchers.IO) {
         val codeBuildRuntimes = settings.codeBuildRunTimeVersions.map { String.format("     %s", it.trim()) }
         val installPhaseSection = if (codeBuildRuntimes.isEmpty()) "" else String.format(installPhaseTemplate, codeBuildRuntimes.joinToString())
 
@@ -359,41 +352,40 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .build()
 
 
-        val startBuildResponse = codeBuild.startBuild(buildStartRequest).await()
+        val startBuildResponse = codeBuild.startBuild(buildStartRequest)
         val buildId = startBuildResponse.build().id()
         val junitDescription = Description.createTestDescription("Synnefo", info.cucumberFeatureLocation)
 
         if (triggerTestStarted)
             job.notifier.fireTestStarted(junitDescription)
 
-        return ScheduledJob(job, buildId, info, junitDescription)
+        return@withContext ScheduledJob(job, buildId, info, junitDescription)
     }
 
     private fun readFileChunks(file: URI, partSizeMb: Int) = sequence {
         val connection = file.toValidURL(classLoader).openConnection()
-        val stream = connection.getInputStream()
+        connection.getInputStream().use {s ->
+            val contentLength = connection.contentLength
+            var partSize = partSizeMb * 1024 * 1024
 
-        val contentLength = connection.contentLength
-        var partSize = partSizeMb * 1024 * 1024
+            var filePosition: Long = 0
+            var i = 1
 
-        var filePosition: Long = 0
-        var i = 1
+            while (filePosition < contentLength) {
+                partSize = Math.min(partSize, (contentLength - filePosition).toInt())
 
-        while (filePosition < contentLength) {
-            partSize = Math.min(partSize, (contentLength - filePosition).toInt())
+                val fileContent = ByteArray(partSize)
+                s.read(fileContent, 0, partSize)
 
-            val fileContent = ByteArray(partSize)
-            stream.read(fileContent, 0, partSize)
-
-            yield(Pair(i, fileContent))
-            filePosition += partSize
-            i++
+                yield(Pair(i, fileContent))
+                filePosition += partSize
+                i++
+            }
         }
-        stream.close()
     }
 
-    private suspend fun S3AsyncClient.multipartUploadFile(bucket: String, key: String, filePath: URI, partSizeMb: Int) {
-        val s3clientExt = this
+    private suspend fun S3Client.multipartUploadFile(bucket: String, key: String, filePath: URI, partSizeMb: Int) = withContext(Dispatchers.IO) {
+        val s3clientExt = this@multipartUploadFile
         val filteredKey = key.replace("//", "/")
 
         val createUploadRequest = CreateMultipartUploadRequest.builder()
@@ -401,7 +393,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .bucket(bucket)
                 .build()
 
-        val response = s3clientExt.createMultipartUpload(createUploadRequest).await()
+        val response = s3clientExt.createMultipartUpload(createUploadRequest)
 
         val chunks = readFileChunks(filePath, partSizeMb).toList()
 
@@ -413,9 +405,9 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                             .uploadId(response.uploadId())
                             .partNumber(it.first)
                             .build()
-                    val data = AsyncRequestBody.fromBytes(it.second)
+                    val data = RequestBody.fromBytes(it.second)
 
-                    val etag = s3clientExt.uploadPart(uploadRequest, data).await().eTag()
+                    val etag = s3clientExt.uploadPart(uploadRequest, data).eTag()
 
                     CompletedPart.builder().partNumber(it.first).eTag(etag).build()
                 }
@@ -429,7 +421,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                         .uploadId(response.uploadId())
                         .multipartUpload(completedMultipartUpload)
                         .build()
-        s3clientExt.completeMultipartUpload(completeMultipartUploadRequest).await()
+        s3clientExt.completeMultipartUpload(completeMultipartUploadRequest)
     }
 
     private fun generateBuildspecForFeature(jar: String, feature: String, runtimeOptions: List<String>, randomSeed : Long, installPhaseSection : String): String {
