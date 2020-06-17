@@ -118,7 +118,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .prefix(prefix)
                 .build()
 
-        val listResponse = withContext(Dispatchers.IO){ s3.listObjects(listObjectsRequest) }
+        val listResponse =  s3.listObjects(listObjectsRequest)
         val identifiers = listResponse.contents().map { ObjectIdentifier.builder().key(it.key()).build() }
         val deleteObjectsRequest = DeleteObjectsRequest.builder()
                 .bucket(bucketName)
