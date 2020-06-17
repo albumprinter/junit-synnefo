@@ -32,9 +32,6 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     // At this point the only way to use them is to use the environment variables
     private val s3: S3Client = S3Client
             .builder()
-            .overrideConfiguration {
-                it.retryPolicy(retryPolicy())
-            }
             .build()
     private val codeBuild: CodeBuildClient = CodeBuildClient
             .builder()
@@ -223,16 +220,13 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                             async { startBuild(job, settings, location, it, shouldTriggerNotifier) }
                         }
                         .map { it.await() }
-
                 currentQueue.addAll(scheduledJobs)
                 println("started ${currentBatch.count()} jobs")
                 delay(2500)
             }
-
             delay(2000)
             notificationTicker.tick()
         }
-
         s3Tasks.joinAll()
     }
 
@@ -241,22 +235,16 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
         val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
         val keyPath = "${result.info.synnefoOptions.bucketOutputFolder}$buildId/${result.info.synnefoOptions.outputFileName}"
-        try {
-            val getObjectRequest = GetObjectRequest.builder()
-                    .bucket(result.info.synnefoOptions.bucketName)
-                    .key(keyPath)
-                    .build()!!
+        val getObjectRequest = GetObjectRequest.builder()
+                .bucket(result.info.synnefoOptions.bucketName)
+                .key(keyPath)
+                .build()!!
 
-            val response = s3.getObject(getObjectRequest, ResponseTransformer.toInputStream())
+        val response = s3.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
-            ZipHelper.unzip(response, targetDirectory)
-            s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
-            println("collected artifacts for ${result.info.cucumberFeatureLocation}")
-        }
-        catch(e: Exception){
-            println("Could not collect artifacts for buildId $buildId and key $keyPath. Stack trace: ${e.printStackTrace()}")
-            throw e
-        }
+        ZipHelper.unzip(response, targetDirectory)
+        s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
+        println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
 
     private suspend fun uploadToS3AndGetSourcePath(settings: SynnefoProperties): String {
