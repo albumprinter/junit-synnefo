@@ -19,6 +19,7 @@ import software.amazon.awssdk.services.codebuild.model.StatusType.*
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.*
 import java.io.File
+import java.lang.Exception
 import java.net.URI
 import java.nio.file.Paths
 import java.util.*
@@ -29,17 +30,23 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     // TODO
     // Should we have an option to use these clients with keys/secrets?
     // At this point the only way to use them is to use the environment variables
-    private val s3: S3Client = S3Client.builder().build()
+    private val s3: S3Client = S3Client
+            .builder()
+            .overrideConfiguration {
+                it.retryPolicy(retryPolicy())
+            }
+            .build()
     private val codeBuild: CodeBuildClient = CodeBuildClient
             .builder()
             .overrideConfiguration {
-                it.retryPolicy(codeBuildRetryPolicy())
+                it.retryPolicy(retryPolicy())
             }
             .build()
 
-    private fun codeBuildRetryPolicy(): RetryPolicy {
+    private fun retryPolicy(): RetryPolicy {
         return RetryPolicy
                 .builder()
+                .numRetries(5)
                 .retryCondition { RetryUtils.isServiceException(it.exception()) }
                 .backoffStrategy(BackoffStrategy.defaultThrottlingStrategy())
                 .build()
@@ -234,17 +241,22 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
 
         val buildId = result.buildId.substring(result.buildId.indexOf(':') + 1)
         val keyPath = "${result.info.synnefoOptions.bucketOutputFolder}$buildId/${result.info.synnefoOptions.outputFileName}"
+        try {
+            val getObjectRequest = GetObjectRequest.builder()
+                    .bucket(result.info.synnefoOptions.bucketName)
+                    .key(keyPath)
+                    .build()!!
 
-        val getObjectRequest = GetObjectRequest.builder()
-                .bucket(result.info.synnefoOptions.bucketName)
-                .key(keyPath)
-                .build()!!
+            val response = s3.getObject(getObjectRequest, ResponseTransformer.toInputStream())
 
-        val response = s3.getObject(getObjectRequest, ResponseTransformer.toInputStream())
-
-        ZipHelper.unzip(response, targetDirectory)
-        s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
-        println("collected artifacts for ${result.info.cucumberFeatureLocation}")
+            ZipHelper.unzip(response, targetDirectory)
+            s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
+            println("collected artifacts for ${result.info.cucumberFeatureLocation}")
+        }
+        catch(e: Exception){
+            println("Could not collect artifacts for buildId $buildId and key $keyPath. Stack trace: ${e.printStackTrace()}")
+            throw e
+        }
     }
 
     private suspend fun uploadToS3AndGetSourcePath(settings: SynnefoProperties): String {
