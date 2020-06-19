@@ -13,6 +13,7 @@ import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.core.sync.ResponseTransformer
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import software.amazon.awssdk.services.codebuild.CodeBuildClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
@@ -32,9 +33,17 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     // At this point the only way to use them is to use the environment variables
     private val s3: S3Client = S3Client
             .builder()
+            .overrideConfiguration {
+                it.retryPolicy(retryPolicy())
+            }
+            .httpClientBuilder { UrlConnectionHttpClient.builder()
+                    .build() }
             .build()
     private val codeBuild: CodeBuildClient = CodeBuildClient
             .builder()
+            .httpClientBuilder { UrlConnectionHttpClient.builder()
+                    .build()
+            }
             .overrideConfiguration {
                 it.retryPolicy(retryPolicy())
             }
