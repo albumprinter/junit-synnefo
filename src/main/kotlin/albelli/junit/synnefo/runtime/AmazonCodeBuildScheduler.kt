@@ -240,9 +240,24 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .key(keyPath)
                 .build()!!
 
-        val response = s3.getObject(getObjectRequest, ResponseTransformer.toInputStream())
+        //Sorry for the half-assed retry policy.
+        //AWS SDK apparently doesn't use the default RetryPolicy handler for this specific
+        //method, but a half-assed one found here:
+        //https://github.com/aws/aws-sdk-java/blob/508e86e651411dcec7aef76aea91018b3444020a/aws-java-sdk-s3/src/main/java/com/amazonaws/services/s3/internal/ServiceUtils.java#L391
+        //Life sucks.
+        for (i in 0..5)
+        {
+            try{
+                val response = s3.getObject(getObjectRequest, ResponseTransformer.toInputStream())
+                ZipHelper.unzip(response, targetDirectory)
+                break
+            }
+            catch(e: Exception){
+                delay(2000)
+                if (i == 5) throw e else continue
+            }
+        }
 
-        ZipHelper.unzip(response, targetDirectory)
         s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
