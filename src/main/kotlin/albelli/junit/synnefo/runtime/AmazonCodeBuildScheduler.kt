@@ -262,6 +262,7 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 break
             }
             catch(e: Exception){
+                println("S3 call to get build $buildId artifacts failed with ${e.printStackTrace()}. Retrying...(retry #$i)")
                 delay(2000)
                 if (i == 5) throw e else continue
             }
