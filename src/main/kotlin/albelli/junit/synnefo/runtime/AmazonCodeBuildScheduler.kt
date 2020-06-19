@@ -13,6 +13,7 @@ import software.amazon.awssdk.core.retry.RetryUtils
 import software.amazon.awssdk.core.retry.backoff.BackoffStrategy
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.core.sync.ResponseTransformer
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import software.amazon.awssdk.services.codebuild.CodeBuildClient
 import software.amazon.awssdk.services.codebuild.model.*
 import software.amazon.awssdk.services.codebuild.model.StatusType.*
@@ -32,9 +33,17 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
     // At this point the only way to use them is to use the environment variables
     private val s3: S3Client = S3Client
             .builder()
+            .overrideConfiguration {
+                it.retryPolicy(retryPolicy())
+            }
+            .httpClientBuilder { UrlConnectionHttpClient.builder()
+                    .build() }
             .build()
     private val codeBuild: CodeBuildClient = CodeBuildClient
             .builder()
+            .httpClientBuilder { UrlConnectionHttpClient.builder()
+                    .build()
+            }
             .overrideConfiguration {
                 it.retryPolicy(retryPolicy())
             }
@@ -240,9 +249,25 @@ internal class AmazonCodeBuildScheduler(private val classLoader: ClassLoader) {
                 .key(keyPath)
                 .build()!!
 
-        val response = s3.getObject(getObjectRequest, ResponseTransformer.toInputStream())
+        //Sorry for the half-assed retry policy.
+        //AWS SDK apparently doesn't use the default RetryPolicy handler for this specific
+        //method, but a half-assed one found here:
+        //https://github.com/aws/aws-sdk-java/blob/508e86e651411dcec7aef76aea91018b3444020a/aws-java-sdk-s3/src/main/java/com/amazonaws/services/s3/internal/ServiceUtils.java#L391
+        //Life sucks.
+        for (i in 0..5)
+        {
+            try{
+                val response = s3.getObject(getObjectRequest, ResponseTransformer.toInputStream())
+                ZipHelper.unzip(response, targetDirectory)
+                break
+            }
+            catch(e: Exception){
+                println("S3 call to get build $buildId artifacts failed with ${e.printStackTrace()}. Retrying...(retry #$i)")
+                delay(2000)
+                if (i == 5) throw e else continue
+            }
+        }
 
-        ZipHelper.unzip(response, targetDirectory)
         s3.deleteS3uploads(result.info.synnefoOptions.bucketName, keyPath)
         println("collected artifacts for ${result.info.cucumberFeatureLocation}")
     }
