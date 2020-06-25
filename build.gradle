@@ -68,7 +68,7 @@ dependencies {
     compile "io.cucumber:cucumber-java8:$cucumber_version"
     compile "io.cucumber:cucumber-junit:$cucumber_version"
     compile "software.amazon.awssdk:s3:2.13.38"
-    compile "software.amazon.awssdk:url-connection-client:2.13.38"
+    compile "software.amazon.awssdk:url-connection-client:2.13.44"
     compile "software.amazon.awssdk:codebuild:2.13.38"
     compile "software.amazon.awssdk:sdk-core:2.13.38"
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
