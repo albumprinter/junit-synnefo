@@ -1,5 +1,5 @@
 #babushka
-#image: albelli/aws-codebuild-docker-images:java-openjdk-8
+#image: aws/codebuild/standard:5.0
 #computeType: BUILD_GENERAL1_LARGE
 #gitversionworkaround: true
 
@@ -9,6 +9,9 @@ phases:
   pre_build:
     commands:
       - echo Build started on `date`
+  install:
+      runtime-versions:
+        java: corretto11
   build:
     commands:
       - JFROG_BINTRAY_ACCESS_KEY=$(aws ssm get-parameter --name '/build/variables/JFROG_BINTRAY_ACCESS_KEY' --query Parameter.Value --output text)
