@@ -17,7 +17,7 @@ on:
   pull_request:
     branches: [ "master" ]
   schedule:
-    - cron: '57 20 * * 3'
+    - cron: '27 17 * * 3'
 
 jobs:
   analyze:
@@ -30,17 +30,14 @@ jobs:
     runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
     timeout-minutes: ${{ (matrix.language == 'swift' && 120) || 360 }}
     permissions:
-      # required for all workflows
-      security-events: write
-
-      # only required for workflows in private repositories
       actions: read
       contents: read
+      security-events: write
 
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'csharp' ]
+        language: [ 'java-kotlin' ]
         # CodeQL supports [ 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'swift' ]
         # Use only 'java-kotlin' to analyze code written in Java, Kotlin or both
         # Use only 'javascript-typescript' to analyze code written in JavaScript, TypeScript or both
@@ -62,18 +59,6 @@ jobs:
         # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
         # queries: security-extended,security-and-quality
 
-    - name: Add NuGet Feed
-      run: dotnet nuget add source ${{ secrets.ARTIFACTORY_FEED_URL }} --username ${{ secrets.ARTIFACTORY_USERNAME }} --password ${{ secrets.ARTIFACTORY_USER_PASSWORD }} --store-password-in-clear-text
-
-    - name: Restore Project Dependencies
-      env:
-        nuget_feed_source: ${{ secrets.ARTIFACTORY_FEED_URL }}
-      run: |
-        if [ -e *.sln ]; then
-          dotnet restore
-        else
-          dotnet restore ./src/*.sln
-        fi
 
     # Autobuild attempts to build any compiled languages (C/C++, C#, Go, Java, or Swift).
     # If this step fails, then you should remove it and run the build manually (see below)
